@@ -118,6 +118,24 @@ measure the others'.
 `pg_recall_guard` is the neutral version: it belongs to no index, so it can watch
 all of them.
 
+## Tests
+
+```sh
+make installcheck            # no vector extension required
+make installcheck-vector     # end-to-end, requires pgvector
+```
+
+They are split on purpose. `installcheck` covers what must hold on any PostgreSQL
+— the extension loads, discovery invents nothing, and pointing it at a plain btree
+fails with a message that says where to look. `installcheck-vector` builds a real
+HNSW index and asserts the thing that matters: that **recall collapses when the
+index is throttled**. If it did not, the tool would not be measuring anything and
+every other number it prints would be decorative.
+
+Assertions are ranges, not exact values, because `measure()` samples queries at
+random — a test demanding `0.9000` would fail every few runs, and a test that
+fails for reasons that are not failures gets ignored.
+
 ## Maturity
 
 **0.1.0, released as `testing`.** The mechanism is verified and the numbers above

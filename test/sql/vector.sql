@@ -1,0 +1,57 @@
+-- Prueba de extremo a extremo con un índice vectorial real. REQUIERE pgvector,
+-- por eso no corre en `make installcheck` sino en `make installcheck-vector`.
+--
+-- Las aserciones son de RANGO y no de valor exacto: measure() muestrea consultas
+-- al azar, así que un test que exigiera "0.9000" fallaría cada tantas corridas.
+-- Un test que falla a veces se termina ignorando, y un test ignorado no protege
+-- nada.
+
+CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS pg_recall_guard CASCADE;
+
+-- Corpus chico pero suficiente para que HNSW tenga que elegir: 2.000 vectores
+-- de 32 dimensiones, deterministas (setseed) para que el índice sea el mismo en
+-- cada corrida.
+SELECT setseed(0.42);
+CREATE TABLE rg_items (id serial PRIMARY KEY, embedding vector(32));
+INSERT INTO rg_items (embedding)
+SELECT array_agg(random())::vector(32)
+  FROM generate_series(1, 2000) g, generate_series(1, 32) d
+ GROUP BY g;
+
+CREATE INDEX rg_items_hnsw ON rg_items USING hnsw (embedding vector_cosine_ops);
+ANALYZE rg_items;
+
+-- 1. El descubrimiento lo encuentra, con su access method y su operador.
+SELECT table_name, access_method, operator, column_name
+  FROM recall_guard.vector_indexes WHERE index_name = 'rg_items_hnsw';
+
+-- 2. Con el índice sano el recall es alto.
+SET hnsw.ef_search = 100;
+SELECT recall_guard.measure('rg_items_hnsw'::regclass, 10, 10) >= 0.90 AS sano_es_alto;
+
+-- 3. Y con el índice estrangulado se DERRUMBA. Esta es la aserción que de verdad
+--    importa: si el recall no bajara, la herramienta no estaría midiendo nada y
+--    todos los demás números serían decorativos.
+SET hnsw.ef_search = 1;
+SELECT recall_guard.measure('rg_items_hnsw'::regclass, 10, 10) < 0.50 AS roto_se_derrumba;
+
+-- 4. El self-match no puede sostener el piso: con ef_search=1 el recall tiene que
+--    poder llegar a cero. Antes de descartar el ctid de origen daba exactamente
+--    0.1000 (=1/10), el vector encontrándose a sí mismo.
+SELECT recall_guard.measure('rg_items_hnsw'::regclass, 10, 10) < 0.10 AS sin_piso_artificial;
+
+-- 5. Cada medición queda registrada.
+SELECT count(*) >= 3 AS mediciones_guardadas
+  FROM recall_guard.measurements WHERE index_name = 'rg_items_hnsw';
+
+-- 6. El ciclo completo: aprobar sano, degradar, y que check() lo llame crítico.
+SET hnsw.ef_search = 100;
+SELECT recall_guard.approve('rg_items_hnsw'::regclass, 10, 10, 'test') >= 0.90 AS baseline_alto;
+
+SET hnsw.ef_search = 1;
+SELECT index_name, baseline >= 0.90 AS baseline_alto, current < 0.50 AS bajo, verdict
+  FROM recall_guard.check();
+
+RESET hnsw.ef_search;
+DROP TABLE rg_items CASCADE;
