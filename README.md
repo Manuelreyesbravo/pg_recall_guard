@@ -23,7 +23,7 @@ SELECT index_name, table_name, access_method, operator
 --  docs_dann  | docs       | diskann       | <=>
 
 -- Record what you consider good.
-SELECT recall_guard.approve('items_hnsw', k => 10, p_sample_size => 100);
+SELECT recall_guard.approve('items_hnsw', p_k => 10, p_sample_size => 100);
 
 -- Later — from pg_cron, from your monitoring, from a shell:
 SELECT * FROM recall_guard.check();
@@ -98,6 +98,18 @@ measure the others'.
 
 `pg_recall_guard` is the neutral version: it belongs to no index, so it can watch
 all of them.
+
+## Maturity
+
+**0.1.0, released as `testing`.** The mechanism is verified and the numbers above
+are real, but they come from one machine, one dataset of 38,352 vectors, two index
+types and a single PostgreSQL version (19beta2). Nobody has run this against a
+production workload yet, and the sampling strategy — drawing query vectors from
+rows of the table — is a reasonable proxy for real traffic, not real traffic.
+
+Treat the recall numbers it reports as trustworthy and its coverage as unproven.
+Reports from other datasets, dimensions and index parameters are the most useful
+thing anyone could send.
 
 ## License
 
