@@ -136,6 +136,13 @@ Assertions are ranges, not exact values, because `measure()` samples queries at
 random — a test demanding `0.9000` would fail every few runs, and a test that
 fails for reasons that are not failures gets ignored.
 
+`installcheck` is green on **PostgreSQL 18.6 and 19beta2**, with the same expected
+output on both. Earlier versions are not tested: `META.json` claims 13 as the
+minimum because nothing in the SQL is newer than 9.5 (`TABLESAMPLE`,
+`tsm_system_rows`, `ON CONFLICT`, `EXPLAIN (FORMAT JSON)`, `format()` with
+`%I`/`%L`), but that is reasoning from the source, not a passing test. If you run
+it on 13–17, a report either way is welcome.
+
 ## Maturity
 
 **0.1.0, released as `testing`.** The mechanism is verified and the numbers above
