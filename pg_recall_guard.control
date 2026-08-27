@@ -1,0 +1,5 @@
+# pg_recall_guard extension
+comment = 'Watch vector indexes for recall drift against an approved baseline'
+default_version = '1.0'
+relocatable = false
+requires = ''
