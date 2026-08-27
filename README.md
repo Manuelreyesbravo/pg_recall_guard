@@ -81,13 +81,9 @@ runs.
 ## Install
 
 ```sh
-pgxn install --testing pg_recall_guard
+pgxn install pg_recall_guard
 ```
 
-The `--testing` is required: `pgxn install` looks for the latest **stable**
-release by default, and this one is released as `testing` on purpose (see
-[Maturity](#maturity)). The flag will stop being necessary when a stable release
-exists.
 
 Or from source:
 
@@ -145,15 +141,28 @@ it on 13–17, a report either way is welcome.
 
 ## Maturity
 
-**0.1.0, released as `testing`.** The mechanism is verified and the numbers above
-are real, but they come from one machine, one dataset of 38,352 vectors, two index
-types and a single PostgreSQL version (19beta2). Nobody has run this against a
-production workload yet, and the sampling strategy — drawing query vectors from
-rows of the table — is a reasonable proxy for real traffic, not real traffic.
+**0.2.0, released as `stable`** — the test suite is what earned the label, not
+time in the field. What that means concretely: the mechanism is tested, including
+the assertion that recall *collapses* when an index is throttled, and it is green
+on two PostgreSQL versions with identical expected output.
 
-Treat the recall numbers it reports as trustworthy and its coverage as unproven.
-Reports from other datasets, dimensions and index parameters are the most useful
-thing anyone could send.
+What it does **not** mean, and is worth knowing before you rely on it:
+
+- The performance figures above come from **one machine and one dataset** (38,352
+  vectors, 768 dimensions), on `hnsw` and `diskann`. Other dimensions, `m` and
+  `ef_search` values are untested.
+- **PostgreSQL 13–17 are untested.** Green on 18.6 and 19beta2.
+- **Nobody has run this against a production workload.** The 0.1.0 release was
+  `testing`, which meant `pgxn install` skipped it by default and nobody could
+  find it — so field reports had no way of arriving. That is the main reason this
+  release is `stable`.
+- The sampling strategy — drawing query vectors from rows of the table — is a
+  reasonable proxy for real traffic, not real traffic. Capturing actual queries
+  needs an executor hook in C, which this does not have.
+
+Treat the recall numbers it reports as trustworthy and its coverage as narrow.
+Reports from other datasets, dimensions and index parameters are the single most
+useful thing anyone could send.
 
 ## License
 
