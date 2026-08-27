@@ -1,4 +1,4 @@
--- pg_recall_guard 0.1.0 — vigila que un índice vectorial siga devolviendo lo que aprobaste.
+-- pg_recall_guard 0.2.0 — vigila que un índice vectorial siga devolviendo lo que aprobaste.
 --
 -- El problema: un índice ANN degradado NO falla. Devuelve k vecinos plausibles y
 -- nunca avisa que cuatro de los diez buenos quedaron afuera. No hay error, no hay
