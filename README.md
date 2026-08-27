@@ -81,11 +81,25 @@ runs.
 ## Install
 
 ```sh
+pgxn install pg_recall_guard
+```
+
+Or from source:
+
+```sh
 make install    # or: make PG_CONFIG=/path/to/pg_config install
 ```
 
-Requires the `tsm_system_rows` extension (ships with PostgreSQL contrib) for
-sampling.
+Then, in the database you want to watch:
+
+```sql
+CREATE EXTENSION pg_recall_guard CASCADE;
+```
+
+The `CASCADE` pulls in `tsm_system_rows` (PostgreSQL contrib), which `measure()`
+uses to sample query vectors. Without it, `CREATE EXTENSION` fails immediately and
+tells you so — rather than installing cleanly and failing at the first
+measurement.
 
 ## Prior art, and where this differs
 
