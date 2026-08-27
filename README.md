@@ -81,8 +81,13 @@ runs.
 ## Install
 
 ```sh
-pgxn install pg_recall_guard
+pgxn install --testing pg_recall_guard
 ```
+
+The `--testing` is required: `pgxn install` looks for the latest **stable**
+release by default, and this one is released as `testing` on purpose (see
+[Maturity](#maturity)). The flag will stop being necessary when a stable release
+exists.
 
 Or from source:
 
