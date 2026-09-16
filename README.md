@@ -78,6 +78,18 @@ and silent, so the only moment it gets caught is when something bothers to look.
 Start with `p_sample_size => 30` and raise it if the numbers move around between
 runs.
 
+## Tested on
+
+Measured on 2026-09-16, not assumed: `make installcheck` was run against each
+of these releases, every one in a container of the official image for that
+version (19beta2 is a local build).
+
+| 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 |
+|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| ✓  | ✓  | ✓  | ✓  | ✓  | ✓  | ✓  | ✓  | ✓  | ✓  |
+
+Every release still receiving updates, and three that are not.
+
 ## Install
 
 ```sh
