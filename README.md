@@ -1,5 +1,7 @@
 # pg_recall_guard
 
+[![CI](https://github.com/Manuelreyesbravo/pg_recall_guard/actions/workflows/ci.yml/badge.svg)](https://github.com/Manuelreyesbravo/pg_recall_guard/actions/workflows/ci.yml)
+
 **Watch vector indexes for recall drift against a baseline you approved.**
 
 A degraded ANN index does not fail. It returns *k* plausible neighbours and never
