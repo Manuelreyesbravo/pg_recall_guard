@@ -1,3 +1,6 @@
+-- Copyright 2026 Manuel Reyes Bravo
+-- SPDX-License-Identifier: PostgreSQL
+
 -- pg_recall_guard 0.2.0 -> 0.2.1
 --
 -- No schema change. This release adds project governance and legal files

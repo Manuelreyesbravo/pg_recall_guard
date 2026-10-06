@@ -1,3 +1,6 @@
+-- Copyright 2026 Manuel Reyes Bravo
+-- SPDX-License-Identifier: PostgreSQL
+
 -- pg_recall_guard 0.1.0 -> 0.2.0
 --
 -- La 0.2.0 no cambia el codigo: agrega la suite de pruebas (make installcheck,
