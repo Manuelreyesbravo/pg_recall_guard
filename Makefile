@@ -1,5 +1,5 @@
 EXTENSION    = pg_recall_guard
-DATA         = pg_recall_guard--0.1.0--0.2.0.sql pg_recall_guard--0.2.0.sql
+DATA         = pg_recall_guard--0.1.0--0.2.0.sql pg_recall_guard--0.2.0.sql pg_recall_guard--0.2.0--0.2.1.sql
 PG_CONFIG   ?= pg_config
 
 # `make installcheck` corre solo lo que no depende de ninguna extension de

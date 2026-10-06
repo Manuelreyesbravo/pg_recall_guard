@@ -1,0 +1,7 @@
+-- pg_recall_guard 0.2.0 -> 0.2.1
+--
+-- No schema change. This release adds project governance and legal files
+-- (NOTICE, AUTHORS, SECURITY, CONTRIBUTING, TRADEMARK) and nothing that runs in
+-- the database. The upgrade is empty on purpose: the objects a user has after
+-- ALTER EXTENSION ... UPDATE TO '0.2.1' are exactly those of 0.2.0, which is
+-- what ci/upgrade_check.sh verifies member by member against a fresh install.
