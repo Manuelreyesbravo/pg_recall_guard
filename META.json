@@ -2,7 +2,7 @@
    "name": "pg_recall_guard",
    "abstract": "Watch vector indexes for recall drift against a baseline you approved",
    "description": "A degraded approximate-nearest-neighbour index does not fail. It returns k plausible neighbours and never mentions that four of the ten good ones were left out — no error, no log entry, no alert. pg_recall_guard measures the recall of a vector index against exact ground truth, records the number you accepted as good, and reports when it drifts. It finds indexes through pg_amop.amoppurpose = 'o', a property of PostgreSQL rather than of any extension, so the same code covers hnsw and ivfflat (pgvector), diskann (pgvectorscale), gist and spgist without naming any of them. Existing recall tooling is tied to the index that ships it: each vector extension has an incentive to measure its own and none to measure the others'. This is the neutral one.",
-   "version": "0.2.2",
+   "version": "0.2.3",
    "maintainer": [
       "Manuel Reyes <manuelreyesbravo@gmail.com>"
    ],
@@ -12,7 +12,7 @@
          "abstract": "Measure and watch recall of any PostgreSQL vector index",
          "file": "pg_recall_guard--0.2.0.sql",
          "docfile": "README.md",
-         "version": "0.2.2"
+         "version": "0.2.3"
       }
    },
    "prereqs": {
