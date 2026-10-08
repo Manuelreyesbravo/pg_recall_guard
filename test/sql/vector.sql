@@ -24,7 +24,7 @@ ANALYZE rg_items;
 
 -- 1. El descubrimiento lo encuentra, con su access method y su operador.
 SELECT table_name, access_method, operator, column_name
-  FROM recall_guard.vector_indexes WHERE index_name = 'rg_items_hnsw';
+  FROM recall_guard.vector_indexes WHERE index_name = 'public.rg_items_hnsw';
 
 -- 2. Con el índice sano el recall es alto.
 SET hnsw.ef_search = 100;
@@ -43,7 +43,7 @@ SELECT recall_guard.measure('rg_items_hnsw'::regclass, 10, 10) < 0.10 AS sin_pis
 
 -- 5. Cada medición queda registrada.
 SELECT count(*) >= 3 AS mediciones_guardadas
-  FROM recall_guard.measurements WHERE index_name = 'rg_items_hnsw';
+  FROM recall_guard.measurements WHERE index_name = 'public.rg_items_hnsw';
 
 -- 6. El ciclo completo: aprobar sano, degradar, y que check() lo llame crítico.
 SET hnsw.ef_search = 100;

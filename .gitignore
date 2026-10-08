@@ -5,5 +5,5 @@ test/regression.out
 *.so
 
 # The throwaway cluster test/cluster.sh builds, and release bundles.
-.testcluster
+.testcluster*
 *.zip

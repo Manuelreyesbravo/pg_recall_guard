@@ -43,14 +43,14 @@ CREATE TABLE rg_t (id int PRIMARY KEY, txt text);
 CREATE INDEX rg_btree ON rg_t (txt);
 \set ON_ERROR_STOP off
 SELECT recall_guard.evaluate_query('rg_btree'::regclass, '[1,2,3]', 10);
-ERROR:  pg_recall_guard: rg_btree no es un índice con operador de ordenamiento
+ERROR:  pg_recall_guard: public.rg_btree no es un índice con operador de ordenamiento
 HINT:  Mira recall_guard.vector_indexes para los que sí lo son.
 SELECT recall_guard.measure('rg_btree'::regclass, 10, 5);
-ERROR:  pg_recall_guard: rg_btree no es un índice vectorial
+ERROR:  pg_recall_guard: public.rg_btree no es un índice vectorial
 \set ON_ERROR_STOP on
 -- Un btree tampoco debe aparecer en el descubrimiento.
 SELECT count(*) AS btree_descubierto
-  FROM recall_guard.vector_indexes WHERE index_name = 'rg_btree';
+  FROM recall_guard.vector_indexes WHERE index_name = 'public.rg_btree';
  btree_descubierto 
 -------------------
                  0

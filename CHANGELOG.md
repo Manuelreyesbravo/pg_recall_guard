@@ -4,6 +4,24 @@ Versions are released on [PGXN](https://pgxn.org/dist/pg_recall_guard/). Each
 upgrade script (`pg_recall_guard--OLD--NEW.sql`) documents, in its own header,
 exactly what changed and why; that is the authoritative per-version record.
 
+## 0.2.4 -- 2026-10-08
+
+* **A baseline measures the index it approved, from any session.** Up to 0.2.3
+  the index name was stored the way `regclass::text` printed it in the approving
+  session -- unqualified when its schema was on that session's `search_path` -- and
+  `check()` resolved it again under the checking session's path, where PostgreSQL
+  searches `pg_temp` first. A temporary index with the approved name was measured
+  instead of the real one (a degraded index came back `ok`), and an index outside
+  `public` could not be found from pg_cron's session (`NO SE PUDO MEDIR`).
+* `vector_indexes.index_name` is now always `schema.name`; filters on it need the
+  schema (`index_name = 'public.items_hnsw'`).
+* Every function runs with `search_path = pg_catalog, pg_temp`; the `TABLESAMPLE`
+  method is named in the schema `tsm_system_rows` was installed into.
+* The upgrade qualifies stored names that match exactly one vector index, and
+  leaves -- with a WARNING -- any name it would have to guess.
+* `test/pg_temp.sh` (`make check-pgtemp`, needs pgvector): red on 0.2.3, green on
+  0.2.4, PostgreSQL 18.6 and 19beta2.
+
 ## 0.2.3 -- 2026-10-06
 
 * **License: Apache License 2.0**, replacing the PostgreSQL License, from this

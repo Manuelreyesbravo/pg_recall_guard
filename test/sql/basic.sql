@@ -34,6 +34,6 @@ SELECT recall_guard.measure('rg_btree'::regclass, 10, 5);
 
 -- Un btree tampoco debe aparecer en el descubrimiento.
 SELECT count(*) AS btree_descubierto
-  FROM recall_guard.vector_indexes WHERE index_name = 'rg_btree';
+  FROM recall_guard.vector_indexes WHERE index_name = 'public.rg_btree';
 
 DROP TABLE rg_t;

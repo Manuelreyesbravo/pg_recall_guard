@@ -19,10 +19,10 @@ CREATE EXTENSION pg_recall_guard;
 SELECT index_name, table_name, access_method, operator
   FROM recall_guard.vector_indexes;
 
---  index_name | table_name | access_method | operator
--- ------------+------------+---------------+----------
---  items_hnsw | items      | hnsw          | <=>
---  docs_dann  | docs       | diskann       | <=>
+--     index_name     | table_name | access_method | operator
+-- -------------------+------------+---------------+----------
+--  public.items_hnsw | items      | hnsw          | <=>
+--  public.docs_dann  | docs       | diskann       | <=>
 
 -- Record what you consider good.
 SELECT recall_guard.approve('items_hnsw', p_k => 10, p_sample_size => 100);
@@ -30,9 +30,9 @@ SELECT recall_guard.approve('items_hnsw', p_k => 10, p_sample_size => 100);
 -- Later — from pg_cron, from your monitoring, from a shell:
 SELECT * FROM recall_guard.check();
 
---  index_name | baseline | current |  drift  | verdict
--- ------------+----------+---------+---------+---------
---  items_hnsw |   0.9800 |  0.8100 | -0.1700 | critico
+--     index_name     | baseline | current |  drift  | verdict
+-- -------------------+----------+---------+---------+---------
+--  public.items_hnsw |   0.9800 |  0.8100 | -0.1700 | critico
 ```
 
 ## Works with any vector index, because it never names one
@@ -69,6 +69,17 @@ below `0.1` no matter how broken the index is. `pg_recall_guard` asks for `k+1`
 neighbours and discards the originating `ctid` from both sides. That is the
 difference between measuring the index and measuring that a vector equals itself:
 at `ef_search = 1` the naive version reports `0.1000`, this one reports `0.0000`.
+
+## It measures the index you approved, from any session
+
+A baseline names its index with the schema (`public.items_hnsw`), and every
+function runs with `search_path = pg_catalog, pg_temp`. So `check()` measures the
+same index whether it runs from your session, from pg_cron, or from a session whose
+`search_path` lacks the index's schema. And a temporary table in the checking
+session cannot take its place: PostgreSQL looks in `pg_temp` first for any relation
+whose path does not name it, so until 0.2.3 a temporary index with the approved name
+was the one measured, and a degraded real index came back `ok`.
+`test/pg_temp.sh` shows both, red on 0.2.3 and green from 0.2.4.
 
 ## Cost
 

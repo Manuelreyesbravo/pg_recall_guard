@@ -26,7 +26,7 @@ CREATE INDEX rg_items_hnsw ON rg_items USING hnsw (embedding vector_cosine_ops);
 ANALYZE rg_items;
 -- 1. El descubrimiento lo encuentra, con su access method y su operador.
 SELECT table_name, access_method, operator, column_name
-  FROM recall_guard.vector_indexes WHERE index_name = 'rg_items_hnsw';
+  FROM recall_guard.vector_indexes WHERE index_name = 'public.rg_items_hnsw';
  table_name | access_method | operator | column_name 
 ------------+---------------+----------+-------------
  rg_items   | hnsw          | <=>      | embedding
@@ -61,7 +61,7 @@ SELECT recall_guard.measure('rg_items_hnsw'::regclass, 10, 10) < 0.10 AS sin_pis
 
 -- 5. Cada medición queda registrada.
 SELECT count(*) >= 3 AS mediciones_guardadas
-  FROM recall_guard.measurements WHERE index_name = 'rg_items_hnsw';
+  FROM recall_guard.measurements WHERE index_name = 'public.rg_items_hnsw';
  mediciones_guardadas 
 ----------------------
  t
@@ -78,9 +78,9 @@ SELECT recall_guard.approve('rg_items_hnsw'::regclass, 10, 10, 'test') >= 0.90 A
 SET hnsw.ef_search = 1;
 SELECT index_name, baseline >= 0.90 AS baseline_alto, current < 0.50 AS bajo, verdict
   FROM recall_guard.check();
-  index_name   | baseline_alto | bajo | verdict 
----------------+---------------+------+---------
- rg_items_hnsw | t             | t    | critico
+      index_name      | baseline_alto | bajo | verdict 
+----------------------+---------------+------+---------
+ public.rg_items_hnsw | t             | t    | critico
 (1 row)
 
 RESET hnsw.ef_search;
