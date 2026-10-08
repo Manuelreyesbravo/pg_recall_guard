@@ -3,3 +3,7 @@ test/regression.diffs
 test/regression.out
 *.o
 *.so
+
+# The throwaway cluster test/cluster.sh builds, and release bundles.
+.testcluster
+*.zip

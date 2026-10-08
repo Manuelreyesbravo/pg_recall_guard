@@ -10,6 +10,13 @@ PG_CONFIG   ?= pg_config
 REGRESS      = basic
 REGRESS_OPTS = --inputdir=test --outputdir=test
 
+# Does it detect a recall drop, and stay quiet when there is none? The one thing
+# it promises, which installcheck cannot test without pgvector. Run against the
+# throwaway cluster: test/cluster.sh init && test/cluster.sh start.
+.PHONY: check-recall
+check-recall:
+	@PG_CONFIG=$(PG_CONFIG) bash ./test/recall.sh
+
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 
