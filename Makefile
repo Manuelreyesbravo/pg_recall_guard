@@ -7,10 +7,10 @@ DATA         = pg_recall_guard--0.1.0--0.2.0.sql pg_recall_guard--0.2.0.sql pg_r
                pg_recall_guard--0.2.7--0.2.8.sql
 PG_CONFIG   ?= pg_config
 
-# `make installcheck` corre solo lo que no depende de ninguna extension de
-# vectores, para que pase en cualquier PostgreSQL. La prueba de extremo a extremo
-# necesita pgvector y vive aparte, en `make installcheck-vector`: un installcheck
-# que falla por una dependencia que el usuario no tiene entrena a ignorarlo.
+# `make installcheck` runs only what depends on no vector extension, so that it
+# passes on any PostgreSQL. The end-to-end test needs pgvector and lives apart, in
+# `make installcheck-vector`: an installcheck that fails over a dependency the user
+# does not have teaches people to ignore it.
 REGRESS      = basic
 REGRESS_OPTS = --inputdir=test --outputdir=test
 

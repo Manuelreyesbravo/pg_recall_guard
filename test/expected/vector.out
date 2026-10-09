@@ -1,16 +1,14 @@
--- Prueba de extremo a extremo con un índice vectorial real. REQUIERE pgvector,
--- por eso no corre en `make installcheck` sino en `make installcheck-vector`.
+-- End-to-end test with a real vector index. It NEEDS pgvector, which is why it
+-- runs in `make installcheck-vector` and not in `make installcheck`.
 --
--- Las aserciones son de RANGO y no de valor exacto: measure() muestrea consultas
--- al azar, así que un test que exigiera "0.9000" fallaría cada tantas corridas.
--- Un test que falla a veces se termina ignorando, y un test ignorado no protege
--- nada.
+-- The assertions are on a RANGE, not an exact value: measure() samples queries at
+-- random, so a test that demanded "0.9000" would fail every so many runs. A test
+-- that fails now and then ends up ignored, and an ignored test protects nothing.
 CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS pg_recall_guard CASCADE;
 NOTICE:  installing required extension "tsm_system_rows"
--- Corpus chico pero suficiente para que HNSW tenga que elegir: 2.000 vectores
--- de 32 dimensiones, deterministas (setseed) para que el índice sea el mismo en
--- cada corrida.
+-- A small corpus, but enough for HNSW to have to choose: 2,000 vectors of 32
+-- dimensions, deterministic (setseed) so that the index is the same on every run.
 SELECT setseed(0.42);
  setseed 
 ---------
@@ -24,7 +22,7 @@ SELECT array_agg(random())::vector(32)
  GROUP BY g;
 CREATE INDEX rg_items_hnsw ON rg_items USING hnsw (embedding vector_cosine_ops);
 ANALYZE rg_items;
--- 1. El descubrimiento lo encuentra, con su access method y su operador.
+-- 1. Discovery finds it, with its access method and its operator.
 SELECT table_name, access_method, operator, column_name
   FROM recall_guard.vector_indexes WHERE index_name = 'public.rg_items_hnsw';
  table_name | access_method | operator | column_name 
@@ -32,55 +30,55 @@ SELECT table_name, access_method, operator, column_name
  rg_items   | hnsw          | <=>      | embedding
 (1 row)
 
--- 2. Con el índice sano el recall es alto.
+-- 2. With the index healthy the recall is high.
 SET hnsw.ef_search = 100;
-SELECT recall_guard.measure('rg_items_hnsw'::regclass, 10, 10) >= 0.90 AS sano_es_alto;
- sano_es_alto 
---------------
+SELECT recall_guard.measure('rg_items_hnsw'::regclass, 10, 10) >= 0.90 AS healthy_is_high;
+ healthy_is_high 
+-----------------
  t
 (1 row)
 
--- 3. Y con el índice estrangulado se DERRUMBA. Esta es la aserción que de verdad
---    importa: si el recall no bajara, la herramienta no estaría midiendo nada y
---    todos los demás números serían decorativos.
+-- 3. And with the index throttled it COLLAPSES. This is the assertion that really
+--    matters: if the recall did not drop, the tool would be measuring nothing and
+--    every other number would be decorative.
 SET hnsw.ef_search = 1;
-SELECT recall_guard.measure('rg_items_hnsw'::regclass, 10, 10) < 0.50 AS roto_se_derrumba;
- roto_se_derrumba 
+SELECT recall_guard.measure('rg_items_hnsw'::regclass, 10, 10) < 0.50 AS broken_collapses;
+ broken_collapses 
 ------------------
  t
 (1 row)
 
--- 4. El self-match no puede sostener el piso: con ef_search=1 el recall tiene que
---    poder llegar a cero. Antes de descartar el ctid de origen daba exactamente
---    0.1000 (=1/10), el vector encontrándose a sí mismo.
-SELECT recall_guard.measure('rg_items_hnsw'::regclass, 10, 10) < 0.10 AS sin_piso_artificial;
- sin_piso_artificial 
+-- 4. The self-match cannot hold up the floor: with ef_search=1 the recall has to
+--    be able to reach zero. Before the source ctid was dropped it gave exactly
+--    0.1000 (=1/10), the vector finding itself.
+SELECT recall_guard.measure('rg_items_hnsw'::regclass, 10, 10) < 0.10 AS no_artificial_floor;
+ no_artificial_floor 
 ---------------------
  t
 (1 row)
 
--- 5. Cada medición queda registrada.
-SELECT count(*) >= 3 AS mediciones_guardadas
+-- 5. Every measurement is recorded.
+SELECT count(*) >= 3 AS measurements_kept
   FROM recall_guard.measurements WHERE index_name = 'public.rg_items_hnsw';
- mediciones_guardadas 
-----------------------
+ measurements_kept 
+-------------------
  t
 (1 row)
 
--- 6. El ciclo completo: aprobar sano, degradar, y que check() lo llame crítico.
+-- 6. The full cycle: approve healthy, degrade, and check() calls it `critico`.
 SET hnsw.ef_search = 100;
-SELECT recall_guard.approve('rg_items_hnsw'::regclass, 10, 10, 'test') >= 0.90 AS baseline_alto;
- baseline_alto 
+SELECT recall_guard.approve('rg_items_hnsw'::regclass, 10, 10, 'test') >= 0.90 AS baseline_high;
+ baseline_high 
 ---------------
  t
 (1 row)
 
 SET hnsw.ef_search = 1;
-SELECT index_name, baseline >= 0.90 AS baseline_alto, current < 0.50 AS bajo, verdict
+SELECT index_name, baseline >= 0.90 AS baseline_high, current < 0.50 AS low, verdict
   FROM recall_guard.check();
-      index_name      | baseline_alto | bajo | verdict 
-----------------------+---------------+------+---------
- public.rg_items_hnsw | t             | t    | critico
+      index_name      | baseline_high | low | verdict 
+----------------------+---------------+-----+---------
+ public.rg_items_hnsw | t             | t   | critico
 (1 row)
 
 RESET hnsw.ef_search;

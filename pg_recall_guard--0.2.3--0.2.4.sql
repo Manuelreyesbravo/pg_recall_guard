@@ -44,9 +44,9 @@ SELECT
     a.attname                                 AS column_name,
     am.amname                                 AS access_method,
     op.oprname                                AS operator,
-    -- El operador NO vive en pg_catalog sino donde se instaló la extensión que lo
-    -- trae, así que su esquema se lee del catálogo en vez de suponerse. Asumir
-    -- pg_catalog acá da "operator does not exist: vector pg_catalog.<=> vector".
+    -- The operator does NOT live in pg_catalog but wherever the extension that brings
+    -- it was installed, so its schema is read from the catalog instead of assumed.
+    -- Assuming pg_catalog gives "operator does not exist: vector pg_catalog.<=> vector".
     opn.nspname                               AS operator_schema,
     oc.opcname                                AS opclass,
     pg_catalog.pg_relation_size(i.indexrelid) AS index_bytes
@@ -93,37 +93,37 @@ SET search_path = pg_catalog, pg_temp
 AS $$
 DECLARE
     v        record;
-    muestra  record;
-    metodo   text;
+    v_sample record;
+    v_method text;
     total    numeric := 0;
     n        int     := 0;
     r        numeric;
 BEGIN
     SELECT * INTO v FROM recall_guard.vector_indexes WHERE index_oid = p_index;
     IF NOT FOUND THEN
-        RAISE EXCEPTION 'pg_recall_guard: % no es un índice vectorial', p_index;
+        RAISE EXCEPTION 'pg_recall_guard: % is not a vector index', p_index;
     END IF;
 
     -- The sampling method lives where tsm_system_rows was installed, which is not
     -- on the pinned path: name it with its schema instead of trusting the caller's.
-    SELECT format('%I.system_rows', ns.nspname) INTO metodo
+    SELECT format('%I.system_rows', ns.nspname) INTO v_method
     FROM pg_extension e JOIN pg_namespace ns ON ns.oid = e.extnamespace
     WHERE e.extname = 'tsm_system_rows';
 
-    -- Se trae el ctid junto al vector: sin él no se puede descartar el self-match
-    -- y el recall queda con un piso artificial de 1/k.
-    FOR muestra IN EXECUTE format(
+    -- The ctid comes along with the vector: without it the self-match cannot be dropped
+    -- and the recall is left with an artificial floor of 1/k.
+    FOR v_sample IN EXECUTE format(
         'SELECT ctid, %I::text AS vec FROM %I.%I TABLESAMPLE %s(%s) WHERE %I IS NOT NULL',
-        v.column_name, v.schema_name, v.table_name, metodo, p_sample_size, v.column_name)
+        v.column_name, v.schema_name, v.table_name, v_method, p_sample_size, v.column_name)
     LOOP
-        r := recall_guard.evaluate_query(p_index, muestra.vec, p_k, muestra.ctid);
+        r := recall_guard.evaluate_query(p_index, v_sample.vec, p_k, v_sample.ctid);
         total := total + r;
         n := n + 1;
     END LOOP;
 
     IF n = 0 THEN
-        RAISE EXCEPTION 'pg_recall_guard: la muestra salió vacía para %', v.index_name
-            USING HINT = '¿La tabla tiene filas con esa columna no nula?';
+        RAISE EXCEPTION 'pg_recall_guard: the sample came back empty for %', v.index_name
+            USING HINT = 'Does the table have rows where that column is not null?';
     END IF;
 
     INSERT INTO recall_guard.measurements (index_name, k, sample_size, recall, index_bytes)
@@ -140,58 +140,58 @@ $$;
 -- The same index approved twice -- once unqualified, once with its schema -- left two rows that
 -- the rename below would make one, and the upgrade died on the primary key (external audit of
 -- 0.2.4, RG-10; fixed in this script when 0.2.8 was released). The most recently approved stays.
-WITH indice AS (
+WITH candidate AS (
     SELECT v.schema_name, c.relname
     FROM recall_guard.vector_indexes v
     JOIN pg_catalog.pg_class c ON c.oid = v.index_oid
     WHERE v.schema_name NOT LIKE 'pg\_temp\_%'
-), unico AS (
-    SELECT s.viejo, min(pg_catalog.format('%I.%I', x.schema_name, x.relname)) AS nuevo
-    FROM (SELECT index_name AS viejo FROM recall_guard.baselines) s
-    JOIN indice x
-      ON s.viejo IN (pg_catalog.quote_ident(x.relname),
+), single_match AS (
+    SELECT s.old_name, min(pg_catalog.format('%I.%I', x.schema_name, x.relname)) AS new_name
+    FROM (SELECT index_name AS old_name FROM recall_guard.baselines) s
+    JOIN candidate x
+      ON s.old_name IN (pg_catalog.quote_ident(x.relname),
                      pg_catalog.format('%I.%I', x.schema_name, x.relname))
-    GROUP BY s.viejo
+    GROUP BY s.old_name
     HAVING count(*) = 1
 )
 DELETE FROM recall_guard.baselines d
- USING unico u, recall_guard.baselines keep
- WHERE u.viejo <> u.nuevo
-   AND d.index_name IN (u.viejo, u.nuevo) AND keep.index_name IN (u.viejo, u.nuevo)
+ USING single_match u, recall_guard.baselines keep
+ WHERE u.old_name <> u.new_name
+   AND d.index_name IN (u.old_name, u.new_name) AND keep.index_name IN (u.old_name, u.new_name)
    AND d.index_name <> keep.index_name
    AND (d.approved_at, d.index_name) < (keep.approved_at, keep.index_name);
 
-WITH indice AS (
+WITH candidate AS (
     SELECT v.schema_name, c.relname
     FROM recall_guard.vector_indexes v
     JOIN pg_catalog.pg_class c ON c.oid = v.index_oid
     WHERE v.schema_name NOT LIKE 'pg\_temp\_%'
-), unico AS (
-    SELECT s.viejo, min(pg_catalog.format('%I.%I', x.schema_name, x.relname)) AS nuevo
-    FROM (SELECT index_name AS viejo FROM recall_guard.baselines
+), single_match AS (
+    SELECT s.old_name, min(pg_catalog.format('%I.%I', x.schema_name, x.relname)) AS new_name
+    FROM (SELECT index_name AS old_name FROM recall_guard.baselines
           UNION
           SELECT index_name FROM recall_guard.measurements) s
-    JOIN indice x
-      ON s.viejo IN (pg_catalog.quote_ident(x.relname),
+    JOIN candidate x
+      ON s.old_name IN (pg_catalog.quote_ident(x.relname),
                      pg_catalog.format('%I.%I', x.schema_name, x.relname))
-    GROUP BY s.viejo
+    GROUP BY s.old_name
     HAVING count(*) = 1
 ), b AS (
-    UPDATE recall_guard.baselines SET index_name = u.nuevo
-    FROM unico u WHERE index_name = u.viejo AND u.viejo <> u.nuevo
+    UPDATE recall_guard.baselines SET index_name = u.new_name
+    FROM single_match u WHERE index_name = u.old_name AND u.old_name <> u.new_name
 )
-UPDATE recall_guard.measurements SET index_name = u.nuevo
-FROM unico u WHERE index_name = u.viejo AND u.viejo <> u.nuevo;
+UPDATE recall_guard.measurements SET index_name = u.new_name
+FROM single_match u WHERE index_name = u.old_name AND u.old_name <> u.new_name;
 
 DO $$
 DECLARE
-    sin_esquema text;
+    unqualified text;
 BEGIN
-    SELECT pg_catalog.string_agg(index_name, ', ' ORDER BY index_name) INTO sin_esquema
+    SELECT pg_catalog.string_agg(index_name, ', ' ORDER BY index_name) INTO unqualified
     FROM recall_guard.baselines
     WHERE pg_catalog.array_length(pg_catalog.parse_ident(index_name, false), 1) = 1;
-    IF sin_esquema IS NOT NULL THEN
-        RAISE WARNING 'pg_recall_guard: baselines left without a schema: %', sin_esquema
+    IF unqualified IS NOT NULL THEN
+        RAISE WARNING 'pg_recall_guard: baselines left without a schema: %', unqualified
             USING DETAIL = 'Each name matches no vector index, or indexes in more than one schema.',
                   HINT   = 'Approve them again with a qualified name: recall_guard.approve(''schema.index'').';
     END IF;

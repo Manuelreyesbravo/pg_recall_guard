@@ -91,15 +91,15 @@ DECLARE
     v_limit    int;
     hits       int;
 BEGIN
-    -- Si la consulta sale de una fila de la tabla, esa fila se encuentra a sí misma
-    -- a distancia 0 y regala un acierto en todas las consultas: con k=10 el recall
-    -- nunca puede bajar de 0,1 por más roto que esté el índice. Se pide uno de más
-    -- y se descarta la propia fila de los dos lados.
+    -- If the query comes from a row of the table, that row finds itself at distance 0
+    -- and gives away a hit in every query: with k=10 the recall can never drop
+    -- below 0.1, however broken the index is. One more is asked for
+    -- and the row itself is dropped from both sides.
     v_limit := p_k + CASE WHEN p_exclude IS NULL THEN 0 ELSE 1 END;
     SELECT * INTO v FROM recall_guard.vector_indexes WHERE index_oid = p_index;
     IF NOT FOUND THEN
-        RAISE EXCEPTION 'pg_recall_guard: % no es un índice con operador de ordenamiento', p_index
-            USING HINT = 'Mira recall_guard.vector_indexes para los que sí lo son.';
+        RAISE EXCEPTION 'pg_recall_guard: % is not an index with an ordering operator', p_index
+            USING HINT = 'See recall_guard.vector_indexes for the ones that are.';
     END IF;
 
     -- ONLY for a plain table (0.2.6): its index does not cover inheritance children. A
@@ -118,11 +118,11 @@ BEGIN
         p_vector, recall_guard._vector_type(p_index), v_limit);
     q_exact := q_indexed;
 
-    -- Lado indexado: forzar el índice y COMPROBAR que se usó -- este índice, no otro
-    -- (0.2.6): cada relación del plan se lee por él o por una de sus particiones.
+    -- Indexed side: force the index and CHECK that it was used -- this index, no other
+    -- (0.2.6): every relation in the plan is read through it or one of its partitions.
     --
-    -- El plan se pide en JSON y no en texto porque EXPLAIN (FORMAT TEXT) devuelve
-    -- UNA FILA POR LÍNEA, y un INTO se queda sólo con la primera.
+    -- The plan is asked for in JSON, not text, because EXPLAIN (FORMAT TEXT) returns
+    -- ONE ROW PER LINE, and an INTO keeps only the first.
     SET LOCAL enable_seqscan = off;
     SET LOCAL enable_bitmapscan = off;
     EXECUTE 'EXPLAIN (FORMAT JSON) ' || q_indexed INTO plan_txt;
@@ -133,28 +133,28 @@ BEGIN
        OR NOT used <@ family
        OR (SELECT count(*) FROM regexp_matches(plan_txt, '"Relation Name":', 'g'))
           <> array_length(used, 1) THEN
-        RAISE EXCEPTION 'pg_recall_guard: el plan no midió el índice %: leyó %', v.index_name,
-                coalesce(array_to_string(used, ', '), 'ningún índice')
+        RAISE EXCEPTION 'pg_recall_guard: the plan did not measure index %: it read %', v.index_name,
+                coalesce(array_to_string(used, ', '), 'no index')
             USING DETAIL = plan_txt,
-                  HINT   = 'Medir otro índice, o la tabla sin índice, reportaría un recall que no es el de este.';
+                  HINT   = 'Measuring another index, or the table without an index, would report a recall other than this one.';
     END IF;
     EXECUTE q_indexed INTO rows_idx;
     RESET enable_seqscan; RESET enable_bitmapscan;
 
-    -- Ground truth: prohibir todo acceso por índice y COMPROBAR que no se usó.
+    -- Ground truth: forbid every index access and CHECK that none was used.
     SET LOCAL enable_indexscan  = off;
     SET LOCAL enable_bitmapscan = off;
     SET LOCAL enable_indexonlyscan = off;
     EXECUTE 'EXPLAIN (FORMAT JSON) ' || q_exact INTO plan_txt;
     IF plan_txt LIKE '%Index Scan%' THEN
-        RAISE EXCEPTION 'pg_recall_guard: no se pudo obtener ground truth exacto para %', v.index_name
+        RAISE EXCEPTION 'pg_recall_guard: could not get an exact ground truth for %', v.index_name
             USING DETAIL = plan_txt,
-                  HINT   = 'El planner insistió con el índice pese a los enable_*=off.';
+                  HINT   = 'The planner kept the index despite enable_*=off.';
     END IF;
     EXECUTE q_exact INTO rows_exact;
     RESET enable_indexscan; RESET enable_bitmapscan; RESET enable_indexonlyscan;
 
-    -- Fuera el self-match de ambos lados, y recién ahí recortar a k.
+    -- Drop the self-match from both sides, and only then cut to k.
     IF p_exclude IS NOT NULL THEN
         excluded := CASE WHEN p_exclude_table IS NULL THEN NULL
                          ELSE p_exclude_table::text || ':' || p_exclude::text END;
@@ -171,7 +171,7 @@ BEGIN
     END IF;
 
     IF rows_exact IS NULL OR array_length(rows_exact, 1) IS NULL THEN
-        RAISE EXCEPTION 'pg_recall_guard: el ground truth salió vacío para %', v.index_name;
+        RAISE EXCEPTION 'pg_recall_guard: the ground truth came back empty for %', v.index_name;
     END IF;
 
     SELECT count(*) INTO hits
@@ -189,8 +189,8 @@ SET search_path = pg_catalog, pg_temp
 AS $$
 DECLARE
     v        record;
-    muestra  record;
-    metodo   text;
+    v_sample record;
+    v_method text;
     v_from   text;
     total    numeric := 0;
     n        int     := 0;
@@ -198,12 +198,12 @@ DECLARE
 BEGIN
     SELECT * INTO v FROM recall_guard.vector_indexes WHERE index_oid = p_index;
     IF NOT FOUND THEN
-        RAISE EXCEPTION 'pg_recall_guard: % no es un índice vectorial', p_index;
+        RAISE EXCEPTION 'pg_recall_guard: % is not a vector index', p_index;
     END IF;
 
     -- The sampling method lives where tsm_system_rows was installed, which is not
     -- on the pinned path: name it with its schema instead of trusting the caller's.
-    SELECT format('%I.system_rows', ns.nspname) INTO metodo
+    SELECT format('%I.system_rows', ns.nspname) INTO v_method
     FROM pg_extension e JOIN pg_namespace ns ON ns.oid = e.extnamespace
     WHERE e.extname = 'tsm_system_rows';
 
@@ -214,20 +214,20 @@ BEGIN
       INTO v_from
       FROM pg_index i JOIN pg_class t ON t.oid = i.indrelid WHERE i.indexrelid = p_index;
 
-    -- Se trae la fila (tabla y ctid) junto al vector: sin ella no se puede descartar el
-    -- self-match y el recall queda con un piso artificial de 1/k.
-    FOR muestra IN EXECUTE format(
+    -- The row (table and ctid) comes along with the vector: without it the self-match
+    -- cannot be dropped and the recall is left with an artificial floor of 1/k.
+    FOR v_sample IN EXECUTE format(
         'SELECT tableoid, ctid, %I::text AS vec FROM %s TABLESAMPLE %s(%s) WHERE %I IS NOT NULL',
-        v.column_name, v_from, metodo, p_sample_size, v.column_name)
+        v.column_name, v_from, v_method, p_sample_size, v.column_name)
     LOOP
-        r := recall_guard.evaluate_query(p_index, muestra.vec, p_k, muestra.ctid, muestra.tableoid);
+        r := recall_guard.evaluate_query(p_index, v_sample.vec, p_k, v_sample.ctid, v_sample.tableoid);
         total := total + r;
         n := n + 1;
     END LOOP;
 
     IF n = 0 THEN
-        RAISE EXCEPTION 'pg_recall_guard: la muestra salió vacía para %', v.index_name
-            USING HINT = '¿La tabla tiene filas con esa columna no nula?';
+        RAISE EXCEPTION 'pg_recall_guard: the sample came back empty for %', v.index_name
+            USING HINT = 'Does the table have rows where that column is not null?';
     END IF;
 
     INSERT INTO recall_guard.measurements (index_name, k, sample_size, recall, index_bytes)

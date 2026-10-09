@@ -100,17 +100,17 @@ DECLARE
     hits       int;
     n_exact    int;
 BEGIN
-    -- Si la consulta sale de una fila de la tabla, esa fila se encuentra a sí misma
-    -- a distancia 0 y regala un acierto en todas las consultas. Se pide uno de más
-    -- y se descarta la propia fila de los dos lados.
+    -- If the query comes from a row of the table, that row finds itself at distance 0
+    -- and gives away a hit in every query. One more is asked for
+    -- and the row itself is dropped from both sides.
     v_limit := p_k + CASE WHEN p_exclude IS NULL THEN 0 ELSE 1 END;
     IF p_index IS NULL OR p_vector IS NULL OR p_k IS NULL THEN
         RAISE EXCEPTION 'pg_recall_guard: evaluate_query needs an index, a vector and k';
     END IF;
     SELECT * INTO v FROM recall_guard.vector_indexes WHERE index_oid = p_index;
     IF NOT FOUND THEN
-        RAISE EXCEPTION 'pg_recall_guard: % no es un índice con operador de ordenamiento', p_index
-            USING HINT = 'Mira recall_guard.vector_indexes para los que sí lo son.';
+        RAISE EXCEPTION 'pg_recall_guard: % is not an index with an ordering operator', p_index
+            USING HINT = 'See recall_guard.vector_indexes for the ones that are.';
     END IF;
     -- What cannot be measured says so (0.2.8): an expression index has no column to compare
     -- against, and a partial index answers only the queries its predicate covers.
@@ -138,7 +138,7 @@ BEGIN
         v_limit);
     q_exact := q_indexed;
 
-    -- Lado indexado: forzar el índice y COMPROBAR que se usó -- este índice, no otro (0.2.6).
+    -- Indexed side: force the index and CHECK that it was used -- this index, no other (0.2.6).
     PERFORM set_config('enable_seqscan', 'off', true);
     PERFORM set_config('enable_bitmapscan', 'off', true);
     EXECUTE 'EXPLAIN (FORMAT JSON) ' || q_indexed INTO plan_txt;
@@ -149,26 +149,26 @@ BEGIN
        OR NOT used <@ family
        OR (SELECT count(*) FROM regexp_matches(plan_txt, '"Relation Name":', 'g'))
           <> array_length(used, 1) THEN
-        RAISE EXCEPTION 'pg_recall_guard: el plan no midió el índice %: leyó %', v.index_name,
-                coalesce(array_to_string(used, ', '), 'ningún índice')
+        RAISE EXCEPTION 'pg_recall_guard: the plan did not measure index %: it read %', v.index_name,
+                coalesce(array_to_string(used, ', '), 'no index')
             USING DETAIL = plan_txt,
-                  HINT   = 'Medir otro índice, o la tabla sin índice, reportaría un recall que no es el de este.';
+                  HINT   = 'Measuring another index, or the table without an index, would report a recall other than this one.';
     END IF;
     EXECUTE q_indexed INTO rows_idx, dist_idx;
     -- The caller's values back (0.2.8), not the defaults: RESET undid even a SET LOCAL of theirs.
     PERFORM set_config('enable_seqscan', prev_seq, true);
     PERFORM set_config('enable_bitmapscan', prev_bmp, true);
 
-    -- Ground truth: prohibir todo acceso por índice y COMPROBAR que no se usó.
+    -- Ground truth: forbid every index access and CHECK that none was used.
     PERFORM set_config('enable_seqscan', 'on', true);
     PERFORM set_config('enable_indexscan', 'off', true);
     PERFORM set_config('enable_bitmapscan', 'off', true);
     PERFORM set_config('enable_indexonlyscan', 'off', true);
     EXECUTE 'EXPLAIN (FORMAT JSON) ' || q_exact INTO plan_txt;
     IF plan_txt ~ '"Node Type": "Index (Only )?Scan"' THEN
-        RAISE EXCEPTION 'pg_recall_guard: no se pudo obtener ground truth exacto para %', v.index_name
+        RAISE EXCEPTION 'pg_recall_guard: could not get an exact ground truth for %', v.index_name
             USING DETAIL = plan_txt,
-                  HINT   = 'El planner insistió con el índice pese a los enable_*=off.';
+                  HINT   = 'The planner kept the index despite enable_*=off.';
     END IF;
     EXECUTE q_exact INTO rows_exact, dist_exact;
     PERFORM set_config('enable_seqscan', prev_seq, true);
@@ -176,7 +176,7 @@ BEGIN
     PERFORM set_config('enable_bitmapscan', prev_bmp, true);
     PERFORM set_config('enable_indexonlyscan', prev_ios, true);
 
-    -- Fuera el self-match de ambos lados, y recién ahí recortar a k.
+    -- Drop the self-match from both sides, and only then cut to k.
     excluded := CASE WHEN p_exclude IS NULL THEN NULL
                      WHEN p_exclude_table IS NULL THEN NULL
                      ELSE p_exclude_table::text || ':' || p_exclude::text END;
@@ -195,7 +195,7 @@ BEGIN
 
     n_exact := coalesce(array_length(dist_exact, 1), 0);
     IF n_exact = 0 THEN
-        RAISE EXCEPTION 'pg_recall_guard: el ground truth salió vacío para %', v.index_name;
+        RAISE EXCEPTION 'pg_recall_guard: the ground truth came back empty for %', v.index_name;
     END IF;
 
     -- A hit is a returned neighbour no farther than the k-th exact one (0.2.7). The tolerance
@@ -235,7 +235,7 @@ BEGIN
     END IF;
     SELECT * INTO v FROM recall_guard.vector_indexes WHERE index_oid = p_index;
     IF NOT FOUND THEN
-        RAISE EXCEPTION 'pg_recall_guard: % no es un índice vectorial', p_index;
+        RAISE EXCEPTION 'pg_recall_guard: % is not a vector index', p_index;
     END IF;
 
     SELECT CASE WHEN t.relkind = 'p' THEN format('%I.%I', v.schema_name, v.table_name)
@@ -268,8 +268,8 @@ BEGIN
     END LOOP;
 
     IF n = 0 THEN
-        RAISE EXCEPTION 'pg_recall_guard: la muestra salió vacía para %', v.index_name
-            USING HINT = '¿La tabla tiene filas con esa columna no nula?';
+        RAISE EXCEPTION 'pg_recall_guard: the sample came back empty for %', v.index_name
+            USING HINT = 'Does the table have rows where that column is not null?';
     END IF;
 
     INSERT INTO recall_guard.measurements (index_name, k, sample_size, recall, index_bytes, settings)

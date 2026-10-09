@@ -10,8 +10,8 @@ set -euo pipefail
 
 PG_CONFIG=${PG_CONFIG:-pg_config}
 BIN=$("$PG_CONFIG" --bindir)
-RAIZ=$(cd "$(dirname "$0")/.." && pwd)
-DATA=${RECALL_CLUSTER:-$RAIZ/.testcluster}
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+DATA=${RECALL_CLUSTER:-$ROOT/.testcluster}
 PORT=${PGPORT:-5496}
 
 # PostgreSQL looks for control files in the `extension/` SUBDIRECTORY of each
@@ -23,14 +23,14 @@ PORT=${PGPORT:-5496}
 # 0.4.1's behaviour. Links, not copies, so an edit is seen without re-init; made
 # again on start so a new upgrade script is picked up too.
 EXT=$DATA/ext
-enlazar() {
+link_scripts() {
     rm -rf "$EXT" && mkdir -p "$EXT/extension"
-    ln -s "$RAIZ"/pg_recall_guard.control "$RAIZ"/pg_recall_guard--*.sql "$EXT/extension/"
+    ln -s "$ROOT"/pg_recall_guard.control "$ROOT"/pg_recall_guard--*.sql "$EXT/extension/"
 }
 
 # The harness must be able to say it is testing the wrong thing.
-version_del_repo() {
-    sed -n "s/^default_version *= *'\(.*\)'/\1/p" "$RAIZ/pg_recall_guard.control"
+repo_version() {
+    sed -n "s/^default_version *= *'\(.*\)'/\1/p" "$ROOT/pg_recall_guard.control"
 }
 
 case "${1:-}" in
@@ -38,7 +38,7 @@ case "${1:-}" in
     "$BIN/pg_ctl" -D "$DATA" -m immediate -w stop >/dev/null 2>&1 || true
     rm -rf "$DATA"
     "$BIN/initdb" -D "$DATA" --auth=trust -E UTF8 >/dev/null
-    enlazar
+    link_scripts
     cat >>"$DATA/postgresql.conf" <<EOF
 port = $PORT
 listen_addresses = 'localhost'
@@ -48,15 +48,15 @@ EOF
     echo "initialised $DATA on port $PORT"
     ;;
   start)
-    enlazar
+    link_scripts
     "$BIN/pg_ctl" -D "$DATA" -l "$DATA/server.log" -w start >/dev/null
-    VISTA=$("$BIN/psql" -X -At -h "$DATA" -p "$PORT" -d postgres -c \
+    SEEN=$("$BIN/psql" -X -At -h "$DATA" -p "$PORT" -d postgres -c \
         "select default_version from pg_available_extensions where name = 'pg_recall_guard'")
-    if [ "$VISTA" != "$(version_del_repo)" ]; then
-        echo "the server sees pg_recall_guard $VISTA, the repo is $(version_del_repo): not testing this repo" >&2
+    if [ "$SEEN" != "$(repo_version)" ]; then
+        echo "the server sees pg_recall_guard $SEEN, the repo is $(repo_version): not testing this repo" >&2
         exit 1
     fi
-    echo "started on port $PORT, loading pg_recall_guard $VISTA from this repo"
+    echo "started on port $PORT, loading pg_recall_guard $SEEN from this repo"
     ;;
   stop)
     "$BIN/pg_ctl" -D "$DATA" -m "${2:-fast}" -w stop >/dev/null

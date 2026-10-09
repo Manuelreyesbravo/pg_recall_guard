@@ -1,31 +1,31 @@
 -- Copyright 2026 Manuel Reyes Bravo
 -- SPDX-License-Identifier: Apache-2.0
 
--- pg_recall_guard 0.2.0 — vigila que un índice vectorial siga devolviendo lo que aprobaste.
+-- pg_recall_guard 0.2.0 -- checks that a vector index keeps returning what you approved.
 --
--- El problema: un índice ANN degradado NO falla. Devuelve k vecinos plausibles y
--- nunca avisa que cuatro de los diez buenos quedaron afuera. No hay error, no hay
--- log, no hay alerta — igual que una regresión de plan, que devuelve las mismas
--- filas y sólo deja de usar el índice.
+-- The problem: a degraded ANN index does NOT fail. It returns k plausible neighbours
+-- and never says that four of the ten right ones were left out. No error, no log, no
+-- alert -- just like a plan regression, which returns the same rows and only stops
+-- using the index.
 --
--- Lo que hace: descubre los índices vectoriales por CATÁLOGO (no por nombre de
--- extensión), mide su recall real contra ground truth exacto, guarda una línea base
--- y avisa cuando el recall se aleja de ella.
+-- What it does: finds the vector indexes by CATALOG (not by extension name), measures
+-- their real recall against exact ground truth, keeps a baseline and warns when the
+-- recall drifts away from it.
 --
--- Agnóstico por construcción: funciona sobre cualquier índice cuyo access method
--- declare operadores de ordenamiento (pg_amop.amoppurpose='o'), que hoy es hnsw,
--- ivfflat, diskann, gist y spgist — y mañana lo que venga, sin tocar este código.
+-- Agnostic by construction: it works on any index whose access method declares
+-- ordering operators (pg_amop.amoppurpose='o'), which today is hnsw, ivfflat, diskann,
+-- gist and spgist -- and tomorrow whatever comes, without touching this code.
 
 \echo Use "CREATE EXTENSION pg_recall_guard" to load this file. \quit
 
 CREATE SCHEMA IF NOT EXISTS recall_guard;
 
 -- ---------------------------------------------------------------------------
--- 1. Descubrimiento
+-- 1. Discovery
 -- ---------------------------------------------------------------------------
 
--- Todo índice del cluster que pueda responder un ORDER BY por operador de
--- distancia, con los datos que hacen falta para reconstruir esa consulta.
+-- Every index in the cluster that can answer an ORDER BY by a distance operator,
+-- with the data needed to rebuild that query.
 CREATE VIEW recall_guard.vector_indexes AS
 SELECT
     i.indexrelid                              AS index_oid,
@@ -35,9 +35,9 @@ SELECT
     a.attname                                 AS column_name,
     am.amname                                 AS access_method,
     op.oprname                                AS operator,
-    -- El operador NO vive en pg_catalog sino donde se instaló la extensión que lo
-    -- trae, así que su esquema se lee del catálogo en vez de suponerse. Asumir
-    -- pg_catalog acá da "operator does not exist: vector pg_catalog.<=> vector".
+    -- The operator does NOT live in pg_catalog but wherever the extension that brings
+    -- it was installed, so its schema is read from the catalog instead of assumed.
+    -- Assuming pg_catalog gives "operator does not exist: vector pg_catalog.<=> vector".
     opn.nspname                               AS operator_schema,
     oc.opcname                                AS opclass,
     pg_relation_size(i.indexrelid)            AS index_bytes
@@ -55,11 +55,11 @@ WHERE i.indisvalid
   AND n.nspname NOT IN ('pg_catalog', 'information_schema');
 
 COMMENT ON VIEW recall_guard.vector_indexes IS
-    'Índices que responden ORDER BY por operador de distancia, detectados por catálogo. '
-    'No nombra ninguna extensión: sirve para pgvector, pgvectorscale, VectorChord o lo que venga.';
+    'Indexes that answer ORDER BY by a distance operator, found through the catalog. '
+    'Names no extension: works for pgvector, pgvectorscale, VectorChord or whatever comes next.';
 
 -- ---------------------------------------------------------------------------
--- 2. Estado persistido
+-- 2. Persisted state
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE recall_guard.baselines (
@@ -72,8 +72,8 @@ CREATE TABLE recall_guard.baselines (
 );
 
 COMMENT ON TABLE recall_guard.baselines IS
-    'El recall que el dueño aceptó como bueno. Sin línea base no hay drift que medir: '
-    '"0,82" no dice nada, "0,82 donde aprobaste 0,97" lo dice todo.';
+    'The recall the owner accepted as good. Without a baseline there is no drift to measure: '
+    '"0.82" says nothing, "0.82 where you approved 0.97" says it all.';
 
 CREATE TABLE recall_guard.measurements (
     id           bigserial   PRIMARY KEY,
@@ -88,22 +88,22 @@ CREATE TABLE recall_guard.measurements (
 CREATE INDEX ON recall_guard.measurements (index_name, measured_at DESC);
 
 -- ---------------------------------------------------------------------------
--- 3. La medición
+-- 3. The measurement
 -- ---------------------------------------------------------------------------
 
--- Recall de UNA consulta: cuántos de los k vecinos que devuelve el índice están
--- entre los k verdaderos.
+-- Recall of ONE query: how many of the k neighbours the index returns are among
+-- the true k.
 --
--- La honestidad de esta función depende de dos cosas que se COMPRUEBAN, no se
--- asumen: que el lado indexado de verdad usó el índice, y que el lado exacto de
--- verdad NO lo usó. Si cualquiera de las dos falla, el número sería un 1.0000
--- inventado — el peor resultado posible, porque es tranquilizador y falso. Por eso
--- se verifica el plan con EXPLAIN y se levanta excepción en vez de devolver algo.
+-- The honesty of this function rests on two things that are CHECKED, not assumed:
+-- that the indexed side really used the index, and that the exact side really did
+-- NOT. If either fails, the number would be a made-up 1.0000 -- the worst possible
+-- result, because it is reassuring and false. So the plan is checked with EXPLAIN
+-- and an exception is raised instead of returning anything.
 CREATE FUNCTION recall_guard.evaluate_query(
     p_index   regclass,
     p_vector  text,
     p_k       int DEFAULT 10,
-    p_exclude tid DEFAULT NULL   -- el ctid de origen, cuando la consulta sale de la tabla
+    p_exclude tid DEFAULT NULL   -- the source ctid, when the query comes from the table
 ) RETURNS numeric
 LANGUAGE plpgsql AS $$
 DECLARE
@@ -116,15 +116,15 @@ DECLARE
     v_limit    int;
     hits       int;
 BEGIN
-    -- Si la consulta sale de una fila de la tabla, esa fila se encuentra a sí misma
-    -- a distancia 0 y regala un acierto en todas las consultas: con k=10 el recall
-    -- nunca puede bajar de 0,1 por más roto que esté el índice. Se pide uno de más
-    -- y se descarta el propio ctid de los dos lados.
+    -- If the query comes from a row of the table, that row finds itself at distance 0
+    -- and gives away a hit in every query: with k=10 the recall can never drop
+    -- below 0.1, however broken the index is. One more is asked for
+    -- and its own ctid is dropped from both sides.
     v_limit := p_k + CASE WHEN p_exclude IS NULL THEN 0 ELSE 1 END;
     SELECT * INTO v FROM recall_guard.vector_indexes WHERE index_oid = p_index;
     IF NOT FOUND THEN
-        RAISE EXCEPTION 'pg_recall_guard: % no es un índice con operador de ordenamiento', p_index
-            USING HINT = 'Mira recall_guard.vector_indexes para los que sí lo son.';
+        RAISE EXCEPTION 'pg_recall_guard: % is not an index with an ordering operator', p_index
+            USING HINT = 'See recall_guard.vector_indexes for the ones that are.';
     END IF;
 
     q_indexed := format(
@@ -134,37 +134,37 @@ BEGIN
         p_vector, recall_guard._vector_type(p_index), v_limit);
     q_exact := q_indexed;
 
-    -- Lado indexado: forzar el índice y COMPROBAR que se usó.
+    -- Indexed side: force the index and CHECK that it was used.
     --
-    -- El plan se pide en JSON y no en texto porque EXPLAIN (FORMAT TEXT) devuelve
-    -- UNA FILA POR LÍNEA, y un INTO se queda sólo con la primera: el "Index Scan"
-    -- que aparece más abajo no se vería nunca y la comprobación sería decorativa.
+    -- The plan is asked for in JSON, not text, because EXPLAIN (FORMAT TEXT) returns
+    -- ONE ROW PER LINE, and an INTO keeps only the first: the "Index Scan"
+    -- further down would never be seen and the check would be decorative.
     SET LOCAL enable_seqscan = off;
     EXECUTE 'EXPLAIN (FORMAT JSON) ' || q_indexed INTO plan_txt;
     IF plan_txt NOT LIKE '%Index Scan%' THEN
-        RAISE EXCEPTION 'pg_recall_guard: el plan no usó el índice %', v.index_name
+        RAISE EXCEPTION 'pg_recall_guard: the plan did not use index %', v.index_name
             USING DETAIL = plan_txt,
-                  HINT   = 'Sin index scan la medición compararía el índice contra sí mismo y daría 1.0 siempre.';
+                  HINT   = 'Without an index scan the measurement would compare the index with itself and always give 1.0.';
     END IF;
     EXECUTE q_indexed INTO tids_idx;
     RESET enable_seqscan;
 
-    -- Ground truth: prohibir todo acceso por índice y COMPROBAR que no se usó.
+    -- Ground truth: forbid every index access and CHECK that none was used.
     SET LOCAL enable_indexscan  = off;
     SET LOCAL enable_bitmapscan = off;
     SET LOCAL enable_indexonlyscan = off;
     EXECUTE 'EXPLAIN (FORMAT JSON) ' || q_exact INTO plan_txt;
     IF plan_txt LIKE '%Index Scan%' THEN
-        RAISE EXCEPTION 'pg_recall_guard: no se pudo obtener ground truth exacto para %', v.index_name
+        RAISE EXCEPTION 'pg_recall_guard: could not get an exact ground truth for %', v.index_name
             USING DETAIL = plan_txt,
-                  HINT   = 'El planner insistió con el índice pese a los enable_*=off.';
+                  HINT   = 'The planner kept the index despite enable_*=off.';
     END IF;
     EXECUTE q_exact INTO tids_exact;
     RESET enable_indexscan; RESET enable_bitmapscan; RESET enable_indexonlyscan;
 
-    -- Fuera el self-match de ambos lados, y recién ahí recortar a k. Si se
-    -- recortara antes, el hueco que deja el descarte se llenaría con el vecino
-    -- k+1 y volveríamos a contar de más.
+    -- Drop the self-match from both sides, and only then cut to k. Cutting
+    -- first, the gap the dropped row leaves would be filled by neighbour
+    -- k+1 and we would count too many again.
     IF p_exclude IS NOT NULL THEN
         SELECT array_agg(x) INTO tids_idx
         FROM (SELECT x FROM unnest(tids_idx) x WHERE x <> p_exclude LIMIT p_k) s;
@@ -173,7 +173,7 @@ BEGIN
     END IF;
 
     IF tids_exact IS NULL OR array_length(tids_exact, 1) IS NULL THEN
-        RAISE EXCEPTION 'pg_recall_guard: el ground truth salió vacío para %', v.index_name;
+        RAISE EXCEPTION 'pg_recall_guard: the ground truth came back empty for %', v.index_name;
     END IF;
 
     SELECT count(*) INTO hits
@@ -184,9 +184,9 @@ BEGIN
 END;
 $$;
 
--- El tipo de la columna indexada, para castear el literal del vector sin asumir
--- que siempre es `vector`: puede ser halfvec, sparsevec o lo que traiga la
--- extensión de turno.
+-- The type of the indexed column, to cast the vector literal without assuming
+-- it is always `vector`: it can be halfvec, sparsevec or whatever the extension
+-- at hand brings.
 CREATE FUNCTION recall_guard._vector_type(p_index regclass)
 RETURNS text LANGUAGE sql STABLE AS $$
     SELECT format_type(a.atttypid, a.atttypmod)
@@ -196,17 +196,17 @@ RETURNS text LANGUAGE sql STABLE AS $$
 $$;
 
 -- ---------------------------------------------------------------------------
--- 4. Muestreo y medición agregada
+-- 4. Sampling and aggregate measurement
 -- ---------------------------------------------------------------------------
 
--- Recall promedio del índice sobre una muestra de consultas.
+-- Mean recall of the index over a sample of queries.
 --
--- Las consultas salen de vectores de la propia tabla, y eso tiene una trampa que
--- hay que desactivar: un vector de la tabla SIEMPRE se encuentra a sí mismo a
--- distancia 0, y ese acierto regalado infla el recall — con k=10 son 10 puntos
--- gratis en cada consulta. Por eso se piden k+1 vecinos y se descarta el propio
--- ctid de los dos lados. Es la diferencia entre medir el índice y medir que un
--- vector es igual a sí mismo.
+-- The queries come from vectors of the table itself, and that has a trap to
+-- disarm: a vector of the table ALWAYS finds itself at distance 0, and that free
+-- hit inflates the recall -- with k=10 it is 10 points for free in every query.
+-- So k+1 neighbours are asked for and its own ctid is dropped from both sides.
+-- It is the difference between measuring the index and measuring that a vector
+-- equals itself.
 CREATE FUNCTION recall_guard.measure(
     p_index       regclass,
     p_k           int DEFAULT 10,
@@ -215,30 +215,30 @@ CREATE FUNCTION recall_guard.measure(
 LANGUAGE plpgsql AS $$
 DECLARE
     v        record;
-    muestra  record;
+    v_sample record;
     total    numeric := 0;
     n        int     := 0;
     r        numeric;
 BEGIN
     SELECT * INTO v FROM recall_guard.vector_indexes WHERE index_oid = p_index;
     IF NOT FOUND THEN
-        RAISE EXCEPTION 'pg_recall_guard: % no es un índice vectorial', p_index;
+        RAISE EXCEPTION 'pg_recall_guard: % is not a vector index', p_index;
     END IF;
 
-    -- Se trae el ctid junto al vector: sin él no se puede descartar el self-match
-    -- y el recall queda con un piso artificial de 1/k.
-    FOR muestra IN EXECUTE format(
+    -- The ctid comes along with the vector: without it the self-match cannot be dropped
+    -- and the recall is left with an artificial floor of 1/k.
+    FOR v_sample IN EXECUTE format(
         'SELECT ctid, %I::text AS vec FROM %I.%I TABLESAMPLE SYSTEM_ROWS(%s) WHERE %I IS NOT NULL',
         v.column_name, v.schema_name, v.table_name, p_sample_size, v.column_name)
     LOOP
-        r := recall_guard.evaluate_query(p_index, muestra.vec, p_k, muestra.ctid);
+        r := recall_guard.evaluate_query(p_index, v_sample.vec, p_k, v_sample.ctid);
         total := total + r;
         n := n + 1;
     END LOOP;
 
     IF n = 0 THEN
-        RAISE EXCEPTION 'pg_recall_guard: la muestra salió vacía para %', v.index_name
-            USING HINT = '¿La tabla tiene filas con esa columna no nula?';
+        RAISE EXCEPTION 'pg_recall_guard: the sample came back empty for %', v.index_name
+            USING HINT = 'Does the table have rows where that column is not null?';
     END IF;
 
     INSERT INTO recall_guard.measurements (index_name, k, sample_size, recall, index_bytes)
@@ -249,11 +249,11 @@ END;
 $$;
 
 -- ---------------------------------------------------------------------------
--- 5. La línea base y el drift
+-- 5. The baseline and the drift
 -- ---------------------------------------------------------------------------
 
--- "Este recall es el que acepto." Sin esto, un 0,82 no dice nada; con esto,
--- dice que perdiste 15 puntos desde que lo aprobaste.
+-- "This recall is the one I accept." Without it, a 0.82 says nothing; with it,
+-- it says you lost 15 points since you approved it.
 CREATE FUNCTION recall_guard.approve(
     p_index       regclass,
     p_k           int DEFAULT 10,
@@ -278,8 +278,8 @@ BEGIN
 END;
 $$;
 
--- El chequeo que se agenda: vuelve a medir todo lo aprobado y reporta la caída.
--- Devuelve filas en vez de escribir en el log porque un monitor lo consume mejor.
+-- The check to schedule: measures everything approved again and reports the drop.
+-- Returns rows instead of writing to the log because a monitor consumes them better.
 CREATE FUNCTION recall_guard.check()
 RETURNS TABLE (
     index_name text,
@@ -297,7 +297,7 @@ BEGIN
         BEGIN
             r := recall_guard.measure(b.index_name::regclass, b.k, b.sample_size);
         EXCEPTION WHEN OTHERS THEN
-            -- Un índice que ya no se puede medir es una novedad, no un silencio.
+            -- An index that can no longer be measured is news, not silence.
             index_name := b.index_name; baseline := b.recall;
             current := NULL; drift := NULL;
             verdict := 'NO SE PUDO MEDIR: ' || SQLERRM;
@@ -320,6 +320,6 @@ END;
 $$;
 
 COMMENT ON FUNCTION recall_guard.check() IS
-    'Vuelve a medir cada índice aprobado y compara con su línea base. '
-    'Pensado para agendarse con pg_cron: la degradación de un índice ANN es gradual '
-    'y silenciosa, así que el único momento en que se detecta es cuando alguien mira.';
+    'Measures every approved index again and compares it with its baseline. '
+    'Meant to be scheduled with pg_cron: an ANN index degrades gradually '
+    'and silently, so the only moment it is detected is when someone looks.';

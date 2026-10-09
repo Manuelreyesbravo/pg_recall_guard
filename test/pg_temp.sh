@@ -30,40 +30,40 @@ set -euo pipefail
 
 PG_CONFIG=${PG_CONFIG:-pg_config}
 PSQL=${PSQL:-$("$PG_CONFIG" --bindir)/psql}
-RAIZ=$(cd "$(dirname "$0")/.." && pwd)
-export PGHOST=${PGHOST:-$RAIZ/.testcluster} PGPORT=${PGPORT:-5496}
-BASE=recall_guard_test_pgtemp
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+export PGHOST=${PGHOST:-$ROOT/.testcluster} PGPORT=${PGPORT:-5496}
+DB=recall_guard_test_pgtemp
 VERSION=${RG_VERSION:-}
-fallos=0
+failures=0
 
 if [ ! -f "$("$PG_CONFIG" --sharedir)/extension/vector.control" ]; then
     echo "DID NOT RUN: pgvector is not installed in this PostgreSQL" >&2
     exit 2
 fi
-if [ "$($PSQL -X -d postgres -tAc "select 1 from pg_database where datname = '$BASE'")" = 1 ]; then
-    echo "a database $BASE already exists: not dropping it, somebody else made it" >&2
+if [ "$($PSQL -X -d postgres -tAc "select 1 from pg_database where datname = '$DB'")" = 1 ]; then
+    echo "a database $DB already exists: not dropping it, somebody else made it" >&2
     exit 2
 fi
-trap '$PSQL -X -d postgres -qc "drop database if exists $BASE" >/dev/null 2>&1 || true' EXIT
+trap '$PSQL -X -d postgres -qc "drop database if exists $DB" >/dev/null 2>&1 || true' EXIT
 
-q() { $PSQL -X -d "$BASE" -tA "$@" 2>&1 || true; }
+q() { $PSQL -X -d "$DB" -tA "$@" 2>&1 || true; }
 
-comprobar() {
-    local que="$1" esperado="$2" obtenido="$3"
-    if [ "$obtenido" = "$esperado" ]; then
-        echo "  ok   $que"
+check() {
+    local what="$1" expected="$2" got="$3"
+    if [ "$got" = "$expected" ]; then
+        echo "  ok   $what"
     else
-        echo "  FAIL $que"
-        echo "       expected: $esperado"
-        echo "       got:      $obtenido"
-        fallos=$((fallos + 1))
+        echo "  FAIL $what"
+        echo "       expected: $expected"
+        echo "       got:      $got"
+        failures=$((failures + 1))
     fi
 }
 
-crear() {
-    $PSQL -X -d postgres -qc "drop database if exists $BASE" >/dev/null
-    $PSQL -X -d postgres -qc "create database $BASE"
-    $PSQL -X -d "$BASE" -q -v ON_ERROR_STOP=1 >/dev/null <<SQL
+create_db() {
+    $PSQL -X -d postgres -qc "drop database if exists $DB" >/dev/null
+    $PSQL -X -d postgres -qc "create database $DB"
+    $PSQL -X -d "$DB" -q -v ON_ERROR_STOP=1 >/dev/null <<SQL
 CREATE EXTENSION vector;
 CREATE EXTENSION pg_recall_guard ${1:+VERSION '$1'} CASCADE;
 SELECT setseed(0.42);
@@ -91,60 +91,60 @@ SQL
 }
 
 # A temporary table and index with the approved names, in the checking session.
-SUPLANTAR="CREATE TEMP TABLE docs (id int PRIMARY KEY, emb vector(16));
+IMPERSONATE="CREATE TEMP TABLE docs (id int PRIMARY KEY, emb vector(16));
 INSERT INTO docs SELECT id, emb FROM public.docs WHERE id <= 300;
 CREATE INDEX docs_idx ON docs USING hnsw (emb vector_l2_ops);
 ANALYZE docs;"
 
-APROBAR="SET ivfflat.probes = 100;
+APPROVE="SET ivfflat.probes = 100;
 SELECT recall_guard.approve('public.docs_idx', 10, 30) IS NOT NULL;
 RESET ivfflat.probes;
 SET search_path = app, public;
 SELECT recall_guard.approve('items_idx', 10, 30) IS NOT NULL;"
 
 echo "== ${VERSION:-repo} =="
-crear "$VERSION"
-q -q -c "$APROBAR" >/dev/null
+create_db "$VERSION"
+q -q -c "$APPROVE" >/dev/null
 # From 0.2.8 check() measures under the settings recorded at approval. This test is about which
 # index is measured, not about settings: the baseline is set to search as the index is searched now,
 # with one probe, where the real ivfflat's recall drops and a temporary hnsw's would not.
 [ -z "$VERSION" ] && q -q -c "update recall_guard.baselines set settings = coalesce(settings, '{}') || '{\"ivfflat.probes\": \"1\"}' where index_name = 'public.docs_idx'" >/dev/null
 
-veredicto="select coalesce(verdict, 'null') from recall_guard.check() where index_name like '%docs_idx'"
-comprobar "control: the real docs_idx, one probe, is critico" "critico" \
-    "$(q -c "$veredicto")"
-comprobar "a temporary docs_idx does not stand in for the approved one" "critico" \
-    "$(q -c "$SUPLANTAR" -c "$veredicto" | tail -1)"
+verdict="select coalesce(verdict, 'null') from recall_guard.check() where index_name like '%docs_idx'"
+check "control: the real docs_idx, one probe, is critico" "critico" \
+    "$(q -c "$verdict")"
+check "a temporary docs_idx does not stand in for the approved one" "critico" \
+    "$(q -c "$IMPERSONATE" -c "$verdict" | tail -1)"
 
 items="select coalesce(left(verdict, 15), 'null') from recall_guard.check() where index_name like '%items_idx'"
-comprobar "control: app.items_idx from the approving path is ok" "ok" \
+check "control: app.items_idx from the approving path is ok" "ok" \
     "$(q -c "set search_path = app, public" -c "$items" | tail -1)"
-comprobar "app.items_idx is measured from a session without app on its path" "ok" \
+check "app.items_idx is measured from a session without app on its path" "ok" \
     "$(q -c "$items")"
 
-comprobar "a baseline names its index with the schema" "app.items_idx|public.docs_idx" \
+check "a baseline names its index with the schema" "app.items_idx|public.docs_idx" \
     "$(q -c "select string_agg(index_name, '|' order by index_name) from recall_guard.baselines")"
 
 # The upgrade: baselines written by 0.2.3 with unqualified names.
 if [ -z "$VERSION" ]; then
-    crear 0.2.3
-    q -q -c "$APROBAR" >/dev/null
+    create_db 0.2.3
+    q -q -c "$APPROVE" >/dev/null
     q -q -c "SET search_path = app, public" \
          -c "INSERT INTO recall_guard.baselines (index_name, k, sample_size, recall) VALUES ('dup_idx', 10, 30, 1)" >/dev/null
-    comprobar "control: 0.2.3 stored the names unqualified" "docs_idx|dup_idx|items_idx" \
+    check "control: 0.2.3 stored the names unqualified" "docs_idx|dup_idx|items_idx" \
         "$(q -c "select string_agg(index_name, '|' order by index_name) from recall_guard.baselines")"
     q -q -c "ALTER EXTENSION pg_recall_guard UPDATE" >/dev/null
-    comprobar "the upgrade qualifies the names that match one index, and leaves the ambiguous one" \
+    check "the upgrade qualifies the names that match one index, and leaves the ambiguous one" \
         "app.items_idx|dup_idx|public.docs_idx" \
         "$(q -c "select string_agg(index_name, '|' order by index_name) from recall_guard.baselines")"
-    comprobar "after the upgrade, a temporary docs_idx does not stand in either" "critico" \
-        "$(q -c "$SUPLANTAR" -c "$veredicto" | tail -1)"
-    comprobar "after the upgrade, app.items_idx is measured from the default path" "ok" \
+    check "after the upgrade, a temporary docs_idx does not stand in either" "critico" \
+        "$(q -c "$IMPERSONATE" -c "$verdict" | tail -1)"
+    check "after the upgrade, app.items_idx is measured from the default path" "ok" \
         "$(q -c "$items")"
 fi
 
-if [ "$fallos" -ne 0 ]; then
-    echo "$fallos check(s) failed"
+if [ "$failures" -ne 0 ]; then
+    echo "$failures check(s) failed"
     exit 1
 fi
 echo "check() measures the index that was approved, from any search_path"

@@ -28,12 +28,12 @@ set -euo pipefail
 PG_CONFIG=${PG_CONFIG:-pg_config}
 BIN=$("$PG_CONFIG" --bindir)
 PSQL=${PSQL:-$BIN/psql}
-RAIZ=$(cd "$(dirname "$0")/.." && pwd)
-export PGHOST=${PGHOST:-$RAIZ/.testcluster} PGPORT=${PGPORT:-5496}
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+export PGHOST=${PGHOST:-$ROOT/.testcluster} PGPORT=${PGPORT:-5496}
 DB=recall_guard_test_audit
 RESTORED=recall_guard_test_audit_restored
 TENANT=recall_guard_test_audit_tenant
-DUMP=$RAIZ/.testcluster/audit.dump
+DUMP=$ROOT/.testcluster/audit.dump
 failures=0
 
 if [ ! -f "$("$PG_CONFIG" --sharedir)/extension/vector.control" ]; then
@@ -134,8 +134,8 @@ ANALYZE twin;
 SQL
 plan=$(q -c "set hnsw.ef_search = 1" -c "set ivfflat.probes = 1" -c "set enable_seqscan = off" -c "explain (costs off) select id from twin order by emb <-> (select emb from twin limit 1) limit 10" | grep -o "using twin_[a-z]*" | head -1)
 check "control: with probes = 1 the planner prefers the ivfflat twin" "twin_ivf" "$plan"
-check "measure(twin_hnsw) does not report the twin's recall: it says which index was read" "did not measure public.twin_hnsw: read twin_ivf" \
-    "$(q -c "set hnsw.ef_search = 1" -c "set ivfflat.probes = 1" -c "select recall_guard.measure('twin_hnsw', 10, 50)" | grep -o 'no midió el índice [^:]*: leyó [a-z_]*' | sed 's/no midió el índice/did not measure/; s/leyó/read/')"
+check "measure(twin_hnsw) does not report the twin's recall: it says which index was read" "did not measure index public.twin_hnsw: it read twin_ivf" \
+    "$(q -c "set hnsw.ef_search = 1" -c "set ivfflat.probes = 1" -c "select recall_guard.measure('twin_hnsw', 10, 50)" | grep -o 'did not measure index [^:]*: it read [a-z_]*')"
 
 echo "RG-04: rows of different partitions are different rows"
 q -q -v ON_ERROR_STOP=1 >/dev/null <<'SQL'
