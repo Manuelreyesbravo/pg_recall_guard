@@ -4,6 +4,12 @@ Versions are released on [PGXN](https://pgxn.org/dist/pg_recall_guard/). Each
 upgrade script (`pg_recall_guard--OLD--NEW.sql`) documents, in its own header,
 exactly what changed and why; that is the authoritative per-version record.
 
+## 0.2.5 -- 2026-10-08
+
+* **Metadata only.** The PGXN description is two sentences now; the longer
+  explanation it carried is in this README. No code changed: the upgrade
+  script 0.2.4 -> 0.2.5 changes no object.
+
 ## 0.2.4 -- 2026-10-08
 
 * **A baseline measures the index it approved, from any session.** Up to 0.2.3
