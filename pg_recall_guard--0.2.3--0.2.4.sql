@@ -13,11 +13,11 @@
 --
 --   * PostgreSQL searches pg_temp first for relations when the path does not name
 --     it. A temporary index with the approved name stood in for the real one: the
---     real index lost its recall (critico) and check() answered `ok`, measuring
+--     real index lost its recall (critical) and check() answered `ok`, measuring
 --     the temporary one.
 --   * an index outside public, approved with its schema on the path, could not be
 --     found from a session without it -- pg_cron's, typically -- so every scheduled
---     check came back NO SE PUDO MEDIR.
+--     check came back COULD NOT MEASURE.
 --
 -- Now index_name is always schema.name, and the functions pin
 -- search_path = pg_catalog, pg_temp: nothing they name can be supplied by the

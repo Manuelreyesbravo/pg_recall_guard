@@ -8,7 +8,7 @@
 -- copy in place of another identical copy was counted as having missed it. Measured on 0.2.6
 -- (test/audit.sh): an index that is exact by distance, over 50 vectors stored 40 times each,
 -- measured 0.3878. And in a real database: idx_insights_emb, 22 rows of which only 10 distinct,
--- read `degradado` (0.9227 against an approved 0.9455) for a week while returning exactly the
+-- read `degraded` (0.9227 against an approved 0.9455) for a week while returning exactly the
 -- right distances in every query.
 --
 -- Recall is now by distance, with ties counted: a returned row is a hit if it is no farther

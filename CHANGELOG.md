@@ -4,6 +4,19 @@ Versions are released on [PGXN](https://pgxn.org/dist/pg_recall_guard/). Each
 upgrade script (`pg_recall_guard--OLD--NEW.sql`) documents, in its own header,
 exactly what changed and why; that is the authoritative per-version record.
 
+## 0.2.9 -- 2026-10-09
+
+* **The verdicts `check()` returns are English.** A monitor that filters on the old words
+  must be updated: `degradado` -> `degraded`, `critico` -> `critical`,
+  `NO SE PUDO MEDIR: <error>` -> `COULD NOT MEASURE: <error>`; `ok` stays.
+* **An installed database is English throughout.** The comments, messages and object comments
+  of the earlier scripts were translated in place after 0.2.8 was released, so an install from
+  PGXN still held the Spanish ones. The 0.2.8 -> 0.2.9 script restates every function and
+  object comment: an upgraded install matches a fresh one. No object is added or removed.
+* `make installcheck-vector` failed since 0.2.8: it degraded the index with a session `SET`,
+  which no longer changes the verdict. It now rebuilds a second index with `m = 2` and keeps the
+  healthy one as its control (`ok` and `critical` in the same `check()`).
+
 ## 0.2.8 -- 2026-10-09
 
 The Medium and Low findings of the external audit of 0.2.4 left open, each measured on 0.2.7
@@ -35,7 +48,7 @@ first (`test/audit.sh`: every tooth red there with its control green).
   so with duplicate vectors an index that returned one copy in place of another identical
   copy was counted as missing it: an index exact by distance over 50 vectors stored 40
   times measured 0.3878 (`test/audit.sh`, red on 0.2.6 with its control green). Found in a
-  real database too: an index over 22 rows, 10 of them distinct, read `degradado` for a week
+  real database too: an index over 22 rows, 10 of them distinct, read `degraded` for a week
   while returning exactly the right distances. A returned neighbour is now a hit if it is
   no farther than the k-th exact one. Without duplicates the number does not change. A
   baseline approved over duplicates was approved low; re-approving it records the real one.
@@ -58,7 +71,7 @@ with its control green).
   reads must now be read through X or one of its partition indexes; otherwise the
   measurement fails and names the index the planner chose. **Behaviour change:** a
   baseline whose index the planner does not choose -- a twin it prefers exists -- is
-  now `NO SE PUDO MEDIR`, where it used to report the twin's recall.
+  now `COULD NOT MEASURE`, where it used to report the twin's recall.
 * **RG-04: rows of different partitions are different rows.** Rows are `(tableoid,
   ctid)`: by `ctid` alone a partitioned index measured 0.97 where its recall by id is
   0.95. `evaluate_query()` takes the sampled row's table as a fifth, optional argument.
@@ -80,7 +93,7 @@ with its control green).
   `check()` resolved it again under the checking session's path, where PostgreSQL
   searches `pg_temp` first. A temporary index with the approved name was measured
   instead of the real one (a degraded index came back `ok`), and an index outside
-  `public` could not be found from pg_cron's session (`NO SE PUDO MEDIR`).
+  `public` could not be found from pg_cron's session (`COULD NOT MEASURE`).
 * `vector_indexes.index_name` is now always `schema.name`; filters on it need the
   schema (`index_name = 'public.items_hnsw'`).
 * Every function runs with `search_path = pg_catalog, pg_temp`; the `TABLESAMPLE`

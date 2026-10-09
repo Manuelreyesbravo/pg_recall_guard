@@ -246,7 +246,7 @@ CREATE INDEX t_idx ON app.t USING hnsw (emb vector_l2_ops);
 INSERT INTO recall_guard.baselines (index_name, k, sample_size, recall, approved_at) VALUES ('t_idx', 10, 30, 0.9, now() - interval '1 day');
 INSERT INTO recall_guard.baselines (index_name, k, sample_size, recall) VALUES ('app.t_idx', 10, 30, 0.95);
 SQL
-check "the upgrade completes" "0.2.8" "$($PSQL -X -d "${DB}_old" -tA -c "alter extension pg_recall_guard update" -c "select extversion from pg_extension where extname = 'pg_recall_guard'" 2>&1)"
+check "the upgrade completes" "$(sed -n "s/^default_version *= *'\(.*\)'/\1/p" "$ROOT/pg_recall_guard.control")" "$($PSQL -X -d "${DB}_old" -tA -c "alter extension pg_recall_guard update" -c "select extversion from pg_extension where extname = 'pg_recall_guard'" 2>&1)"
 check "  ...keeping one baseline, the most recent approval" "rows=1 app.t_idx|0.9500" "$($PSQL -X -d "${DB}_old" -tAc "select 'rows=' || count(*) || ' ' || string_agg(index_name || '|' || recall, ',') from recall_guard.baselines" 2>&1)"
 $PSQL -X -d postgres -qc "drop database if exists ${DB}_old" >/dev/null 2>&1 || true
 

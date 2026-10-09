@@ -1,47 +1,61 @@
 -- Copyright 2026 Manuel Reyes Bravo
 -- SPDX-License-Identifier: Apache-2.0
 
--- pg_recall_guard 0.2.7 -> 0.2.8
+-- pg_recall_guard 0.2.8 -> 0.2.9
 --
--- The Medium and Low findings of the external audit of 0.2.4 left open, each measured on 0.2.7
--- first (test/audit.sh: every tooth red there with its control green).
+-- English throughout, down to what check() returns.
 --
---   * RG-05: the verdict depended on the search settings of whoever ran check(): a role whose
---     ivfflat.probes was 70 read ok on an index the cron, at 2, read critical. approve() records the
---     index's search settings (hnsw.*, ivfflat.*, diskann.*) with the baseline, and check() measures
---     under them; every measurement records the settings it ran under.
---   * RG-06: TABLESAMPLE SYSTEM_ROWS returns contiguous rows, and the NULL filter ran after it: one
---     run sampled the old cluster (1.0) and the next the new one (0.32), and a table that began
---     with 20,000 NULLs gave an empty sample 39 times out of 40. Rows are now drawn at random from
---     the non-NULL ones.
---   * RG-07: approve() accepted a baseline of 0, after which check() can never alarm. A recall
---     outside [0, 1] is refused, and approving one below 0.5 warns.
---   * RG-09: whoever could read baselines and measurements learned the row count and index size of
---     tables it cannot read. Both tables now show a role only the rows of indexes on tables it may
---     read (row level security; the owner, and so pg_dump, see all).
---   * RG-11: approve() of a temporary index stored a baseline that outlives the session. Refused.
---     A baseline is still bound to the index's name, not its identity (see README).
---   * RG-13: k and sample_size had no bound: a sample of 2,000,000,000 ran a seq scan per row.
---     k is 1 to 1000, sample_size 1 to 10,000.
---   * RG-14: measure() RESET the planner settings it changed, undoing the caller's own values; a
---     NULL argument gave a raw syntax error; an expression index gave one too. Fixed, and the plan
---     check reads node types, not a substring a table named "Index Scan" could contain.
+--   * The verdicts check() returns change: 'degradado' -> 'degraded', 'critico' -> 'critical',
+--     'NO SE PUDO MEDIR: <error>' -> 'COULD NOT MEASURE: <error>'; 'ok' stays. A monitor that
+--     filters on the old words must be updated.
+--   * The comments, messages and object comments of the earlier scripts were translated in
+--     place after 0.2.8 was released, so an install from the published 0.2.8 still holds the
+--     Spanish ones. Every function of the extension is restated here with its final
+--     definition, and every object comment is set again: an upgraded install matches a fresh
+--     one (ci/upgrade_check.sh). No object is added or removed.
 
-\echo Use "ALTER EXTENSION pg_recall_guard UPDATE TO '0.2.8'" to load this file. \quit
+\echo Use "ALTER EXTENSION pg_recall_guard UPDATE TO '0.2.9'" to load this file. \quit
 
-ALTER TABLE recall_guard.baselines ADD COLUMN settings jsonb;
-ALTER TABLE recall_guard.measurements ADD COLUMN settings jsonb;
-ALTER TABLE recall_guard.baselines
-    ADD CONSTRAINT a_recall_is_a_fraction CHECK (recall >= 0 AND recall <= 1) NOT VALID;
-DO $$
-BEGIN
-    ALTER TABLE recall_guard.baselines VALIDATE CONSTRAINT a_recall_is_a_fraction;
-EXCEPTION WHEN check_violation THEN
-    RAISE WARNING 'pg_recall_guard: a baseline outside [0, 1] exists; it stays, and new ones are refused';
-END $$;
+-- The type a literal is cast to: the indexed column's type, or for a domain the type at the
+-- bottom of its chain, with the typmod the nearest level declares.
+CREATE OR REPLACE FUNCTION recall_guard._vector_type(p_index regclass)
+RETURNS text
+LANGUAGE sql STABLE
+SET search_path = pg_catalog, pg_temp
+AS $$
+    WITH RECURSIVE chain AS (
+        SELECT t.oid, t.typtype, t.typbasetype,
+               CASE WHEN a.atttypmod <> -1 THEN a.atttypmod ELSE t.typtypmod END AS mod
+          FROM pg_index i
+          JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = i.indkey[0]
+          JOIN pg_type t ON t.oid = a.atttypid
+         WHERE i.indexrelid = p_index
+        UNION ALL
+        SELECT b.oid, b.typtype, b.typbasetype,
+               CASE WHEN c.mod <> -1 THEN c.mod ELSE b.typtypmod END
+          FROM chain c JOIN pg_type b ON b.oid = c.typbasetype
+         WHERE c.typtype = 'd'
+    )
+    SELECT format_type(oid, mod) FROM chain WHERE typtype <> 'd';
+$$;
+
+-- The index and, for a partitioned one, every index that is a partition of it: the only
+-- indexes a plan measuring it may read through.
+CREATE OR REPLACE FUNCTION recall_guard._index_family(p_index regclass)
+RETURNS text[]
+LANGUAGE sql STABLE
+SET search_path = pg_catalog, pg_temp
+AS $$
+    WITH RECURSIVE fam AS (
+        SELECT p_index::oid AS oid
+        UNION
+        SELECT h.inhrelid FROM pg_inherits h JOIN fam f ON h.inhparent = f.oid
+    )
+    SELECT array_agg(c.relname::text) FROM fam JOIN pg_class c ON c.oid = fam.oid;
+$$;
 
 -- The search settings of the vector index access methods, as this session has them.
-CREATE FUNCTION recall_guard._search_settings()
+CREATE OR REPLACE FUNCTION recall_guard._search_settings()
 RETURNS jsonb
 LANGUAGE sql STABLE
 SET search_path = pg_catalog, pg_temp
@@ -51,7 +65,7 @@ AS $f$
 $f$;
 
 -- Whether the current role may read the table an index (named as baselines name it) is on.
-CREATE FUNCTION recall_guard._can_read_index(p_index_name text)
+CREATE OR REPLACE FUNCTION recall_guard._can_read_index(p_index_name text)
 RETURNS boolean
 LANGUAGE sql STABLE
 SET search_path = pg_catalog, pg_temp
@@ -63,13 +77,6 @@ AS $f$
                        JOIN pg_namespace n ON n.oid = c.relnamespace
                       WHERE pg_catalog.format('%I.%I', n.nspname, c.relname) = p_index_name), false);
 $f$;
-
-ALTER TABLE recall_guard.baselines ENABLE ROW LEVEL SECURITY;
-ALTER TABLE recall_guard.measurements ENABLE ROW LEVEL SECURITY;
-CREATE POLICY only_readable_indexes ON recall_guard.baselines
-    USING (recall_guard._can_read_index(index_name)) WITH CHECK (recall_guard._can_read_index(index_name));
-CREATE POLICY only_readable_indexes ON recall_guard.measurements
-    USING (recall_guard._can_read_index(index_name)) WITH CHECK (recall_guard._can_read_index(index_name));
 
 CREATE OR REPLACE FUNCTION recall_guard.evaluate_query(
     p_index regclass, p_vector text, p_k integer DEFAULT 10, p_exclude tid DEFAULT NULL,
@@ -362,4 +369,15 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION recall_guard._search_settings() FROM PUBLIC;
+COMMENT ON VIEW recall_guard.vector_indexes IS
+    'Indexes that answer ORDER BY by a distance operator, found through the catalog. '
+    'Names no extension: works for pgvector, pgvectorscale, VectorChord or whatever comes next.';
+
+COMMENT ON TABLE recall_guard.baselines IS
+    'The recall the owner accepted as good. Without a baseline there is no drift to measure: '
+    '"0.82" says nothing, "0.82 where you approved 0.97" says it all.';
+
+COMMENT ON FUNCTION recall_guard.check() IS
+    'Measures every approved index again and compares it with its baseline. '
+    'Meant to be scheduled with pg_cron: an ANN index degrades gradually '
+    'and silently, so the only moment it is detected is when someone looks.';

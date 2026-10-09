@@ -300,7 +300,7 @@ BEGIN
             -- An index that can no longer be measured is news, not silence.
             index_name := b.index_name; baseline := b.recall;
             current := NULL; drift := NULL;
-            verdict := 'NO SE PUDO MEDIR: ' || SQLERRM;
+            verdict := 'COULD NOT MEASURE: ' || SQLERRM;
             RETURN NEXT;
             CONTINUE;
         END;
@@ -311,8 +311,8 @@ BEGIN
         drift      := round(r - b.recall, 4);
         verdict    := CASE
             WHEN r >= b.recall - 0.02 THEN 'ok'
-            WHEN r >= b.recall - 0.10 THEN 'degradado'
-            ELSE 'critico'
+            WHEN r >= b.recall - 0.10 THEN 'degraded'
+            ELSE 'critical'
         END;
         RETURN NEXT;
     END LOOP;

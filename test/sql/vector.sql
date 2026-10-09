@@ -43,13 +43,25 @@ SELECT recall_guard.measure('rg_items_hnsw'::regclass, 10, 10) < 0.10 AS no_arti
 SELECT count(*) >= 3 AS measurements_kept
   FROM recall_guard.measurements WHERE index_name = 'public.rg_items_hnsw';
 
--- 6. The full cycle: approve healthy, degrade, and check() calls it `critico`.
+-- 6. The full cycle, both answers in one check(): two indexes over the same rows are approved
+--    healthy, then one is rebuilt with bad parameters (m = 2) under the same name. Since 0.2.8
+--    check() measures under the settings recorded at approval, so the index has to be bad for
+--    real: the SET below changes nothing, and the healthy index, its control, stays `ok`.
+CREATE TABLE rg_bad (id int PRIMARY KEY, embedding vector(32));
+INSERT INTO rg_bad SELECT id, embedding FROM rg_items;
+CREATE INDEX rg_bad_hnsw ON rg_bad USING hnsw (embedding vector_cosine_ops);
+ANALYZE rg_bad;
+
 SET hnsw.ef_search = 100;
-SELECT recall_guard.approve('rg_items_hnsw'::regclass, 10, 10, 'test') >= 0.90 AS baseline_high;
+SELECT recall_guard.approve('rg_items_hnsw'::regclass, 10, 30, 'test') >= 0.90 AS baseline_high;
+SELECT recall_guard.approve('rg_bad_hnsw'::regclass, 10, 30, 'test') >= 0.90 AS baseline_high;
+
+DROP INDEX rg_bad_hnsw;
+CREATE INDEX rg_bad_hnsw ON rg_bad USING hnsw (embedding vector_cosine_ops) WITH (m = 2, ef_construction = 4);
 
 SET hnsw.ef_search = 1;
-SELECT index_name, baseline >= 0.90 AS baseline_high, current < 0.50 AS low, verdict
-  FROM recall_guard.check();
+SELECT index_name, baseline >= 0.90 AS baseline_high, current < baseline - 0.10 AS dropped, verdict
+  FROM recall_guard.check() ORDER BY index_name;
 
 RESET hnsw.ef_search;
-DROP TABLE rg_items CASCADE;
+DROP TABLE rg_items, rg_bad CASCADE;

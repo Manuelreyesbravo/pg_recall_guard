@@ -13,7 +13,7 @@
 #     temporary one;
 #   * an index outside public, approved with its schema on the path, could not
 #     be measured from a session without it -- pg_cron's, typically -- and every
-#     check came back NO SE PUDO MEDIR.
+#     check came back COULD NOT MEASURE.
 #
 # From 0.2.4 the name is stored schema-qualified and every function runs with
 # pg_temp last. The upgrade qualifies existing baselines when the name matches
@@ -68,7 +68,7 @@ CREATE EXTENSION vector;
 CREATE EXTENSION pg_recall_guard ${1:+VERSION '$1'} CASCADE;
 SELECT setseed(0.42);
 -- public.docs: an ivfflat index. Approved with every list probed (exact), checked
--- with one: its recall really drops, so the honest answer is critico.
+-- with one: its recall really drops, so the honest answer is critical.
 CREATE TABLE docs (id int PRIMARY KEY, emb vector(16));
 INSERT INTO docs SELECT g, (SELECT array_agg(random())::vector(16)
                               FROM generate_series(1, 16) WHERE g > 0)
@@ -111,9 +111,9 @@ q -q -c "$APPROVE" >/dev/null
 [ -z "$VERSION" ] && q -q -c "update recall_guard.baselines set settings = coalesce(settings, '{}') || '{\"ivfflat.probes\": \"1\"}' where index_name = 'public.docs_idx'" >/dev/null
 
 verdict="select coalesce(verdict, 'null') from recall_guard.check() where index_name like '%docs_idx'"
-check "control: the real docs_idx, one probe, is critico" "critico" \
+check "control: the real docs_idx, one probe, is critical" "critical" \
     "$(q -c "$verdict")"
-check "a temporary docs_idx does not stand in for the approved one" "critico" \
+check "a temporary docs_idx does not stand in for the approved one" "critical" \
     "$(q -c "$IMPERSONATE" -c "$verdict" | tail -1)"
 
 items="select coalesce(left(verdict, 15), 'null') from recall_guard.check() where index_name like '%items_idx'"
@@ -137,7 +137,7 @@ if [ -z "$VERSION" ]; then
     check "the upgrade qualifies the names that match one index, and leaves the ambiguous one" \
         "app.items_idx|dup_idx|public.docs_idx" \
         "$(q -c "select string_agg(index_name, '|' order by index_name) from recall_guard.baselines")"
-    check "after the upgrade, a temporary docs_idx does not stand in either" "critico" \
+    check "after the upgrade, a temporary docs_idx does not stand in either" "critical" \
         "$(q -c "$IMPERSONATE" -c "$verdict" | tail -1)"
     check "after the upgrade, app.items_idx is measured from the default path" "ok" \
         "$(q -c "$items")"

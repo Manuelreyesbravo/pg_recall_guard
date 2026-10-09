@@ -11,9 +11,9 @@
 # that always alarms passes the other:
 #   * with the same settings it was approved with, check() says `ok`;
 #   * with the index degraded (hnsw.ef_search = 2: the graph returns almost none of
-#     what it should), check() says `critico`.
+#     what it should), check() says `critical`.
 # Measured when it was written (PG 19beta2, pgvector): approved 1.0000, unchanged
-# 1.0000 ok, degraded 0.1000 critico.
+# 1.0000 ok, degraded 0.1000 critical.
 #
 #   PG_CONFIG=/path/to/pg_config test/cluster.sh init
 #   PG_CONFIG=/path/to/pg_config test/cluster.sh start
@@ -74,7 +74,7 @@ check "with the same settings, check() says ok" "ok" \
 # approved with, so a low ef_search in the checking session no longer changes the verdict. The index
 # is rebuilt with the same name and bad parameters (m = 2): measured, 1.0000 -> 0.1867.
 $PSQL -X -d "$DB" -q -c "drop index docs_hnsw" -c "create index docs_hnsw on docs using hnsw (emb vector_l2_ops) with (m = 2, ef_construction = 4)" >/dev/null
-check "with the index degraded, check() says critico" "critico" \
+check "with the index degraded, check() says critical" "critical" \
     "$($PSQL -X -d "$DB" -tAc "select verdict from recall_guard.check()" 2>&1 || true)"
 
 check "  ...and every measurement is recorded" "3" \

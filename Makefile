@@ -4,7 +4,8 @@ DATA         = pg_recall_guard--0.1.0--0.2.0.sql pg_recall_guard--0.2.0.sql pg_r
                pg_recall_guard--0.2.4--0.2.5.sql \
                pg_recall_guard--0.2.5--0.2.6.sql \
                pg_recall_guard--0.2.6--0.2.7.sql \
-               pg_recall_guard--0.2.7--0.2.8.sql
+               pg_recall_guard--0.2.7--0.2.8.sql \
+               pg_recall_guard--0.2.8--0.2.9.sql
 PG_CONFIG   ?= pg_config
 
 # `make installcheck` runs only what depends on no vector extension, so that it

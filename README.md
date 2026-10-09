@@ -32,7 +32,7 @@ SELECT * FROM recall_guard.check();
 
 --     index_name     | baseline | current |  drift  | verdict
 -- -------------------+----------+---------+---------+---------
---  public.items_hnsw |   0.9800 |  0.8100 | -0.1700 | critico
+--  public.items_hnsw |   0.9800 |  0.8100 | -0.1700 | critical
 ```
 
 ## Works with any vector index, because it never names one
@@ -103,6 +103,26 @@ session cannot take its place: PostgreSQL looks in `pg_temp` first for any relat
 whose path does not name it, so until 0.2.3 a temporary index with the approved name
 was the one measured, and a degraded real index came back `ok`.
 `test/pg_temp.sh` shows both, red on 0.2.3 and green from 0.2.4.
+
+## Verdicts
+
+`check()` returns one row per baseline, and its `verdict` is one of:
+
+- `ok` -- the recall is within 0.02 of the baseline;
+- `degraded` -- 0.02 to 0.10 below it;
+- `critical` -- more than 0.10 below it;
+- `COULD NOT MEASURE: <error>` -- the measurement raised (the index was dropped, the
+  planner chose another one, ...); `current` and `drift` are NULL.
+
+**Changed in 0.2.9:** up to 0.2.8 the values were Spanish. A monitor that filters on
+them must be updated:
+
+| up to 0.2.8 | from 0.2.9 |
+|---|---|
+| `ok` | `ok` |
+| `degradado` | `degraded` |
+| `critico` | `critical` |
+| `NO SE PUDO MEDIR: <error>` | `COULD NOT MEASURE: <error>` |
 
 ## What a verdict compares, since 0.2.8
 
