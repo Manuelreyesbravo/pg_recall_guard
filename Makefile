@@ -3,7 +3,8 @@ DATA         = pg_recall_guard--0.1.0--0.2.0.sql pg_recall_guard--0.2.0.sql pg_r
                pg_recall_guard--0.2.2--0.2.3.sql pg_recall_guard--0.2.3--0.2.4.sql \
                pg_recall_guard--0.2.4--0.2.5.sql \
                pg_recall_guard--0.2.5--0.2.6.sql \
-               pg_recall_guard--0.2.6--0.2.7.sql
+               pg_recall_guard--0.2.6--0.2.7.sql \
+               pg_recall_guard--0.2.7--0.2.8.sql
 PG_CONFIG   ?= pg_config
 
 # `make installcheck` corre solo lo que no depende de ninguna extension de

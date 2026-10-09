@@ -105,6 +105,10 @@ SELECT recall_guard.approve('items_idx', 10, 30) IS NOT NULL;"
 echo "== ${VERSION:-repo} =="
 crear "$VERSION"
 q -q -c "$APROBAR" >/dev/null
+# From 0.2.8 check() measures under the settings recorded at approval. This test is about which
+# index is measured, not about settings: the baseline is set to search as the index is searched now,
+# with one probe, where the real ivfflat's recall drops and a temporary hnsw's would not.
+[ -z "$VERSION" ] && q -q -c "update recall_guard.baselines set settings = coalesce(settings, '{}') || '{\"ivfflat.probes\": \"1\"}' where index_name = 'public.docs_idx'" >/dev/null
 
 veredicto="select coalesce(verdict, 'null') from recall_guard.check() where index_name like '%docs_idx'"
 comprobar "control: the real docs_idx, one probe, is critico" "critico" \

@@ -104,6 +104,25 @@ whose path does not name it, so until 0.2.3 a temporary index with the approved 
 was the one measured, and a degraded real index came back `ok`.
 `test/pg_temp.sh` shows both, red on 0.2.3 and green from 0.2.4.
 
+## What a verdict compares, since 0.2.8
+
+- **The index, under the settings it was approved with.** `approve()` records the
+  search settings (`hnsw.*`, `ivfflat.*`, `diskann.*`) and `check()` measures under
+  them, so no role can make a degraded index pass with a `SET`, and every
+  measurement records what it ran under. The other side of that choice: `check()`
+  measures the index, not the application's configuration -- if someone lowers
+  `ivfflat.probes` for the whole application, this does not see it.
+- **A random sample of the rows that have a vector**, not contiguous rows.
+- **Only what the caller may read.** `baselines` and `measurements` show a role only
+  the rows of indexes on tables it may read; the owner (and so `pg_dump`) sees all.
+  Writing a baseline is still approving one: grant `UPDATE` on `baselines` to whom
+  you would let approve.
+- **By name.** A baseline names its index; an index dropped and created again with
+  the same name, or another schema renamed into its place, inherits it. Re-approve
+  after such a change. A temporary index cannot be approved.
+- `check()` holds a lock on each table while it measures it, so a schema change waits
+  behind it, and the queries behind that change: run it with `lock_timeout` set.
+
 ## Cost
 
 `check()` runs one exact sequential scan per sampled query, so it is not free and

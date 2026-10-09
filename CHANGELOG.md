@@ -4,6 +4,31 @@ Versions are released on [PGXN](https://pgxn.org/dist/pg_recall_guard/). Each
 upgrade script (`pg_recall_guard--OLD--NEW.sql`) documents, in its own header,
 exactly what changed and why; that is the authoritative per-version record.
 
+## 0.2.8 -- 2026-10-09
+
+The Medium and Low findings of the external audit of 0.2.4 left open, each measured on 0.2.7
+first (`test/audit.sh`: every tooth red there with its control green).
+
+* **RG-05: the verdict no longer depends on who runs `check()`.** `approve()` records the search
+  settings and `check()` measures under them; each measurement records its settings. Measured:
+  under `ivfflat.probes = 30` and `= 1` the same baseline read different values; now the same.
+* **RG-06: a random sample of the rows that have a vector.** A table that began with 20,000 NULLs
+  gave an empty sample 39 times out of 40; 20 out of 20 now.
+* **RG-07:** a recall outside [0, 1] is refused, and approving one below 0.5 warns.
+* **RG-09:** `baselines` and `measurements` show a role only the rows of indexes on tables it may
+  read, and it cannot write one for another.
+* **RG-10:** the 0.2.3 -> 0.2.4 script, which an installation still on 0.2.0 runs, no longer dies
+  on the same index approved twice: the most recent approval stays.
+* **RG-11:** a temporary index cannot be approved. A baseline is still bound to the index's name
+  (README).
+* **RG-13:** `k` is 1 to 1000, `sample_size` 1 to 10,000.
+* **RG-14:** the caller's planner settings are restored, not reset; NULL arguments and expression
+  or partial indexes give clear errors; the plan is read by node type.
+* RG-12 (the lock `check()` holds) and RG-15 (README contradictions): README.
+* The regression tests that degraded an index with a session `SET` now degrade it for real (an
+  index rebuilt with `m = 2`), since a `SET` no longer changes the verdict. RG-07's tooth uses an
+  exhaustive ivfflat, exact by construction on every PostgreSQL.
+
 ## 0.2.7 -- 2026-10-09
 
 * **Recall is judged by distance, ties included (RG-07).** It was computed by row identity,

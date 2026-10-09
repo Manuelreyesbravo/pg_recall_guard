@@ -137,6 +137,30 @@ $$;
 -- quoted the way regclass prints it, or schema.relname when the schema was off
 -- the approving path; it is rewritten only when exactly one vector index (outside
 -- the temporary schemas, which belong to sessions that are gone) answers to it.
+-- The same index approved twice -- once unqualified, once with its schema -- left two rows that
+-- the rename below would make one, and the upgrade died on the primary key (external audit of
+-- 0.2.4, RG-10; fixed in this script when 0.2.8 was released). The most recently approved stays.
+WITH indice AS (
+    SELECT v.schema_name, c.relname
+    FROM recall_guard.vector_indexes v
+    JOIN pg_catalog.pg_class c ON c.oid = v.index_oid
+    WHERE v.schema_name NOT LIKE 'pg\_temp\_%'
+), unico AS (
+    SELECT s.viejo, min(pg_catalog.format('%I.%I', x.schema_name, x.relname)) AS nuevo
+    FROM (SELECT index_name AS viejo FROM recall_guard.baselines) s
+    JOIN indice x
+      ON s.viejo IN (pg_catalog.quote_ident(x.relname),
+                     pg_catalog.format('%I.%I', x.schema_name, x.relname))
+    GROUP BY s.viejo
+    HAVING count(*) = 1
+)
+DELETE FROM recall_guard.baselines d
+ USING unico u, recall_guard.baselines keep
+ WHERE u.viejo <> u.nuevo
+   AND d.index_name IN (u.viejo, u.nuevo) AND keep.index_name IN (u.viejo, u.nuevo)
+   AND d.index_name <> keep.index_name
+   AND (d.approved_at, d.index_name) < (keep.approved_at, keep.index_name);
+
 WITH indice AS (
     SELECT v.schema_name, c.relname
     FROM recall_guard.vector_indexes v

@@ -69,8 +69,12 @@ comprobar "approve mide un recall alto con el índice sano" "1.0000" "$aprobado"
 comprobar "con la misma configuración, check() dice ok" "ok" \
     "$($PSQL -X -d "$BASE" -tAc "select verdict from recall_guard.check()" 2>&1 || true)"
 
+# Degradado de verdad, no con un SET de la sesión: desde 0.2.8 check() mide con los ajustes con que
+# se aprobó, así que un ef_search bajo en quien chequea ya no cambia el veredicto. El índice se
+# reconstruye con el mismo nombre y malos parámetros (m = 2): medido, 1.0000 -> 0.1867.
+$PSQL -X -d "$BASE" -q -c "drop index docs_hnsw" -c "create index docs_hnsw on docs using hnsw (emb vector_l2_ops) with (m = 2, ef_construction = 4)" >/dev/null
 comprobar "con el índice degradado, check() dice critico" "critico" \
-    "$($PSQL -X -d "$BASE" -tA -c "set hnsw.ef_search = 2" -c "select verdict from recall_guard.check()" 2>&1 || true)"
+    "$($PSQL -X -d "$BASE" -tAc "select verdict from recall_guard.check()" 2>&1 || true)"
 
 comprobar "  ...y cada medición queda registrada" "3" \
     "$($PSQL -X -d "$BASE" -tAc "select count(*) from recall_guard.measurements" 2>&1 || true)"

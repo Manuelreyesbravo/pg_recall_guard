@@ -11,6 +11,13 @@
 #   RG-04 rows were told apart by ctid, which repeats across partitions.
 #   RG-07 rows were matched by identity, so with duplicate vectors an index that returns one
 #         copy in place of another identical one was counted as missing it.
+#   RG-05 the verdict depended on the search settings of whoever ran check().
+#   RG-06 the sample was contiguous rows, and NULLs were filtered after sampling.
+#   RG-07 a baseline of 0 was accepted, after which check() can never alarm.
+#   RG-09 a role that could read baselines and measurements learned about tables it cannot read.
+#   RG-10 the upgrade to 0.2.4 died on the same index approved twice.
+#   RG-13 k and sample_size had no bound.
+#   RG-14 measure() reset the caller's planner settings; NULL arguments gave raw syntax errors.
 #   RG-08 baselines and measurements were not dumped: after a restore check() returned no
 #         rows, which reads as "all fine".
 #
@@ -158,19 +165,90 @@ CREATE TABLE dups (id int, emb vector(8));
 INSERT INTO dups SELECT g, v.emb FROM generate_series(1, 2000) g
   JOIN (SELECT i, (SELECT array_agg(random())::vector(8) FROM generate_series(1, 8) WHERE i > 0) AS emb
           FROM generate_series(0, 49) i) v ON v.i = g % 50;
-CREATE INDEX dups_hnsw ON dups USING hnsw (emb vector_l2_ops) WITH (ef_construction = 200);
+-- Probing every list makes an ivfflat search exhaustive: exact by distance, by construction.
+CREATE INDEX dups_ivf ON dups USING ivfflat (emb vector_l2_ops) WITH (lists = 4);
 ANALYZE dups;
 SQL
-# The control measures by distance, outside the extension: for every row, the 10 distances the
-# index returns against the 10 exact ones. Equal means the index is exact.
 check "control: by distance, the index returns the exact neighbours" "differ=0" \
-    "$(q -c "set hnsw.ef_search = 400" -c "set enable_seqscan = off" \
+    "$(q -c "set ivfflat.probes = 4" -c "set enable_seqscan = off" \
          -c "create temp table vi as select id, array(select round((b.emb <-> a.emb)::numeric, 6) from dups b where b.ctid <> a.ctid order by b.emb <-> a.emb limit 10) d from dups a where id <= 200" \
          -c "reset enable_seqscan" -c "set enable_indexscan = off" -c "set enable_bitmapscan = off" \
          -c "create temp table ve as select id, array(select round((b.emb <-> a.emb)::numeric, 6) from dups b where b.ctid <> a.ctid order by b.emb <-> a.emb limit 10) d from dups a where id <= 200" \
          -c "select 'differ=' || count(*) from vi join ve using (id) where vi.d is distinct from ve.d" | tail -1)"
 check "measure() of that exact index is 1" "measured=1.0000" \
-    "$(q -c "set hnsw.ef_search = 400" -c "select 'measured=' || recall_guard.measure('dups_hnsw', 10, 50)" | tail -1)"
+    "$(q -c "set ivfflat.probes = 4" -c "select 'measured=' || recall_guard.measure('dups_ivf', 10, 50)" | tail -1)"
+
+echo "RG-05: the verdict does not depend on who runs check()"
+q -q -c "create table ivf5 (id int, emb vector(16))" \
+     -c "insert into ivf5 select g, (select array_agg(random())::vector(16) from generate_series(1, 16) where g > 0) from generate_series(1, 300) g" \
+     -c "create index ivf5_idx on ivf5 using ivfflat (emb vector_l2_ops) with (lists = 30)" -c "analyze ivf5" \
+     -c "set ivfflat.probes = 3" -c "select recall_guard.approve('ivf5_idx', 10, 300)" >/dev/null
+m1=$(q -c "set ivfflat.probes = 1" -c "select recall_guard.measure('ivf5_idx', 10, 300)" | tail -1)
+m30=$(q -c "set ivfflat.probes = 30" -c "select recall_guard.measure('ivf5_idx', 10, 300)" | tail -1)
+check "control: the session's probes change what a direct measure reads" "differ=t" \
+    "differ=$(q -c "select ${m30:-0}::numeric - ${m1:-0}::numeric > 0.05")"
+c1=$(q -c "set ivfflat.probes = 1" -c "select current from recall_guard.check() where index_name = 'public.ivf5_idx'" | tail -1)
+c30=$(q -c "set ivfflat.probes = 30" -c "select current from recall_guard.check() where index_name = 'public.ivf5_idx'" | tail -1)
+if [ -n "$c1" ] && [ "$c1" = "$c30" ]; then same=true; else same="false ($c1 / $c30)"; fi
+check "check() under probes = 30 reads what it reads under probes = 1" "same=true" "same=$same"
+check "  ...and the measurement records the settings it ran under" "probes=3" \
+    "$(q -c "select 'probes=' || (settings ->> 'ivfflat.probes') from recall_guard.measurements where index_name = 'public.ivf5_idx' order by id desc limit 1")"
+
+echo "RG-06: the sample is drawn from the rows that have a vector"
+q -q -v ON_ERROR_STOP=1 >/dev/null <<'SQL'
+CREATE TABLE sparse (id int, emb vector(16));
+INSERT INTO sparse SELECT g, NULL FROM generate_series(1, 20000) g;
+INSERT INTO sparse SELECT g, (SELECT array_agg(random())::vector(16) FROM generate_series(1, 16) WHERE g > 0) FROM generate_series(20001, 22000) g;
+CREATE INDEX sparse_hnsw ON sparse USING hnsw (emb vector_l2_ops);
+ANALYZE sparse;
+SQL
+check "a table that begins with 20,000 NULLs is measured 20 times out of 20" "measured=20" \
+    "$(q -c "select 'measured=' || count(*) from generate_series(1, 20) g, lateral (select recall_guard.measure('sparse_hnsw', 10, 30) m) x where m is not null")"
+
+echo "RG-07: a baseline outside [0, 1] is refused"
+check "recall above 1 is refused" "a_recall_is_a_fraction" \
+    "$(q -c "insert into recall_guard.baselines (index_name, k, sample_size, recall) values ('public.twin_hnsw', 10, 30, 2)")"
+
+echo "RG-13 and RG-14: bounds, NULLs, and the caller's settings"
+check "a sample of 2,000,000,000 is refused" "sample_size 1 to 10000" \
+    "$(q -c "select recall_guard.measure('twin_hnsw', 10, 2000000000)")"
+check "a NULL k is a clear error" "needs an index, k and a sample size" \
+    "$(q -c "select recall_guard.measure('twin_hnsw', null, 30)")"
+check "the caller's planner settings are what they were" "off|off" \
+    "$(q -c "set enable_seqscan = off" -c "set enable_indexonlyscan = off" -c "select recall_guard.measure('flat_hnsw', 10, 5) is not null" -c "select current_setting('enable_seqscan') || '|' || current_setting('enable_indexonlyscan')" | tail -1)"
+q -q -c "create table exprt (id int, emb vector(8))" -c "insert into exprt select g, (select array_agg(random())::vector(8) from generate_series(1, 8) where g > 0) from generate_series(1, 200) g" \
+     -c "create index exprt_idx on exprt using hnsw ((emb::halfvec(8)) halfvec_l2_ops)" >/dev/null
+check "an expression index is a clear error" "expression or partial index" \
+    "$(q -c "select recall_guard.measure('exprt_idx', 10, 5)")"
+
+echo "RG-09: a role sees only the baselines of tables it may read"
+q -q -c "create schema secret" -c "create table secret.payroll (id int, emb vector(16))" \
+     -c "insert into secret.payroll select id, emb from flat" -c "create index payroll_idx on secret.payroll using hnsw (emb vector_l2_ops)" \
+     -c "analyze secret.payroll" -c "select recall_guard.approve('secret.payroll_idx', 10, 10)" \
+     -c "grant usage on schema recall_guard to $TENANT" \
+     -c "grant select, insert, update on recall_guard.baselines to $TENANT" \
+     -c "grant select on recall_guard.measurements, recall_guard.vector_indexes to $TENANT" >/dev/null
+check "control: the owner sees the secret table's measurements" "secret=true" \
+    "$(q -c "select 'secret=' || (count(*) > 0) from recall_guard.measurements where index_name = 'secret.payroll_idx'")"
+check "a role that cannot read the table does not" "secret=false" \
+    "$(qt -c "select 'secret=' || (count(*) > 0) from recall_guard.measurements where index_name = 'secret.payroll_idx'")"
+check "  ...nor can it write a baseline for it" "row-level security" \
+    "$(qt -c "update recall_guard.baselines set recall = 0 where index_name = 'secret.payroll_idx'" -c "insert into recall_guard.baselines (index_name, k, sample_size, recall) values ('secret.payroll_idx', 10, 30, 0.5)")"
+
+echo "RG-10: an installation of 0.2.0 with the same index approved twice upgrades"
+q -q -c "create database ${DB}_old" >/dev/null
+$PSQL -X -d "${DB}_old" -q -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL' || true
+CREATE EXTENSION vector;
+CREATE EXTENSION pg_recall_guard VERSION '0.2.0' CASCADE;
+CREATE SCHEMA app;
+CREATE TABLE app.t (id int, emb vector(4));
+CREATE INDEX t_idx ON app.t USING hnsw (emb vector_l2_ops);
+INSERT INTO recall_guard.baselines (index_name, k, sample_size, recall, approved_at) VALUES ('t_idx', 10, 30, 0.9, now() - interval '1 day');
+INSERT INTO recall_guard.baselines (index_name, k, sample_size, recall) VALUES ('app.t_idx', 10, 30, 0.95);
+SQL
+check "the upgrade completes" "0.2.8" "$($PSQL -X -d "${DB}_old" -tA -c "alter extension pg_recall_guard update" -c "select extversion from pg_extension where extname = 'pg_recall_guard'" 2>&1)"
+check "  ...keeping one baseline, the most recent approval" "rows=1 app.t_idx|0.9500" "$($PSQL -X -d "${DB}_old" -tAc "select 'rows=' || count(*) || ' ' || string_agg(index_name || '|' || recall, ',') from recall_guard.baselines" 2>&1)"
+$PSQL -X -d postgres -qc "drop database if exists ${DB}_old" >/dev/null 2>&1 || true
 
 echo "RG-08: baselines and measurements survive pg_dump and restore"
 q -q -c "select recall_guard.approve('flat_hnsw', 10, 30)" >/dev/null

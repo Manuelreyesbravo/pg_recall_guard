@@ -1,6 +1,6 @@
 # pg_recall_guard extension
 comment = 'Watch vector indexes for recall drift against an approved baseline'
-default_version = '0.2.7'
+default_version = '0.2.8'
 relocatable = false
 # measure() samples query vectors with TABLESAMPLE SYSTEM_ROWS. Declaring it here
 # fails at CREATE EXTENSION time instead of at the first measurement.
