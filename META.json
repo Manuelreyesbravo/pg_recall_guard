@@ -2,7 +2,7 @@
    "name": "pg_recall_guard",
    "abstract": "Watch vector indexes for recall drift against a baseline you approved",
    "description": "pg_recall_guard measures the recall of a vector index against exact ground truth, records the number you accepted as good, and reports when it drifts — a degraded ANN index otherwise just returns fewer of the right neighbours with no error. It finds indexes through a catalog property, so one neutral tool covers hnsw, ivfflat, diskann, gist and spgist without favouring any extension.",
-   "version": "0.2.5",
+   "version": "0.2.6",
    "maintainer": [
       "Manuel Reyes <manuelreyesbravo@gmail.com>"
    ],
@@ -12,7 +12,7 @@
          "abstract": "Measure and watch recall of any PostgreSQL vector index",
          "file": "pg_recall_guard--0.2.0.sql",
          "docfile": "README.md",
-         "version": "0.2.5"
+         "version": "0.2.6"
       }
    },
    "prereqs": {

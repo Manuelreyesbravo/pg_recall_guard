@@ -57,9 +57,15 @@ Verified on PostgreSQL 19beta2 against pgvector 0.8.6 and pgvectorscale 0.9.0, o
 Two failure modes would produce a reassuring `1.0000` that means nothing. Both are
 checked rather than assumed:
 
-- **The indexed side must actually use the index.** If the planner ignores it, the
-  measurement compares the index against itself and always scores perfect. The plan
-  is inspected and the function raises instead of returning a number.
+- **The indexed side must actually use the index -- this one.** If the planner
+  ignores it, the measurement compares the index against itself and always scores
+  perfect; if it picks a twin index on the same column, the number is the twin's.
+  Since 0.2.6 every relation the plan reads must be read through the index asked
+  about (or, for a partitioned index, one of its partitions), or the function raises
+  and says which index the planner chose. Until 0.2.5 any `Index Scan` passed, and
+  `measure(X)` reported the recall of whichever index the planner preferred. An index
+  the planner never chooses for these queries cannot be measured -- and is not the
+  one your queries are getting either.
 - **The ground truth must not use it.** Same reasoning, other direction.
 
 There is a third trap that is easy to miss. Sample queries are drawn from rows of
@@ -69,6 +75,17 @@ below `0.1` no matter how broken the index is. `pg_recall_guard` asks for `k+1`
 neighbours and discards the originating `ctid` from both sides. That is the
 difference between measuring the index and measuring that a vector equals itself:
 at `ef_search = 1` the naive version reports `0.1000`, this one reports `0.0000`.
+
+A row is its table and its `ctid` (0.2.6): a `ctid` alone repeats across the
+partitions of a partitioned table, which inflated the recall of a partitioned index
+(measured 0.97 against 0.95 by id). A plain table is read with `ONLY`: an
+inheritance child is not covered by the parent's index, and until 0.2.5 one diluted
+the measurement of a broken index from 0.00 to 0.97.
+
+**Measuring an index runs nothing its table's owner wrote** (0.2.6). The sampled
+vector is cast to the column's base type, not to the column's type: on a domain
+column that cast would evaluate the domain's `CHECK` constraints -- functions their
+owner may add after the index was approved -- as whoever runs `check()`.
 
 ## It measures the index you approved, from any session
 

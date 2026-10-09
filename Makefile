@@ -1,7 +1,8 @@
 EXTENSION    = pg_recall_guard
 DATA         = pg_recall_guard--0.1.0--0.2.0.sql pg_recall_guard--0.2.0.sql pg_recall_guard--0.2.0--0.2.1.sql pg_recall_guard--0.2.1--0.2.2.sql \
                pg_recall_guard--0.2.2--0.2.3.sql pg_recall_guard--0.2.3--0.2.4.sql \
-               pg_recall_guard--0.2.4--0.2.5.sql
+               pg_recall_guard--0.2.4--0.2.5.sql \
+               pg_recall_guard--0.2.5--0.2.6.sql
 PG_CONFIG   ?= pg_config
 
 # `make installcheck` corre solo lo que no depende de ninguna extension de
@@ -20,6 +21,11 @@ check-recall:
 
 # Does check() measure the index that was approved, from any search_path? Needs
 # pgvector; run against the throwaway cluster like check-recall.
+# The findings of the external audit of 0.2.4, each against its control. Needs pgvector.
+.PHONY: check-audit
+check-audit:
+	@PG_CONFIG=$(PG_CONFIG) bash ./test/audit.sh
+
 .PHONY: check-pgtemp
 check-pgtemp:
 	@PG_CONFIG=$(PG_CONFIG) bash ./test/pg_temp.sh
@@ -28,7 +34,7 @@ check-pgtemp:
 # stopped afterwards, whatever the suites answered. PostgreSQL 18 or later: the
 # cluster loads this checkout through extension_control_path. CI runs exactly
 # this on 18 and 19.
-SUITES = check-pgtemp check-recall
+SUITES = check-pgtemp check-recall check-audit
 .PHONY: check-suites
 check-suites:
 	@PG_CONFIG=$(PG_CONFIG) bash ./test/cluster.sh init
