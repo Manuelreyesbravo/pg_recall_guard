@@ -4,6 +4,17 @@ Versions are released on [PGXN](https://pgxn.org/dist/pg_recall_guard/). Each
 upgrade script (`pg_recall_guard--OLD--NEW.sql`) documents, in its own header,
 exactly what changed and why; that is the authoritative per-version record.
 
+## 0.2.7 -- 2026-10-09
+
+* **Recall is judged by distance, ties included (RG-07).** It was computed by row identity,
+  so with duplicate vectors an index that returned one copy in place of another identical
+  copy was counted as missing it: an index exact by distance over 50 vectors stored 40
+  times measured 0.3878 (`test/audit.sh`, red on 0.2.6 with its control green). Found in a
+  real database too: an index over 22 rows, 10 of them distinct, read `degradado` for a week
+  while returning exactly the right distances. A returned neighbour is now a hit if it is
+  no farther than the k-th exact one. Without duplicates the number does not change. A
+  baseline approved over duplicates was approved low; re-approving it records the real one.
+
 ## 0.2.6 -- 2026-10-09
 
 From an external audit of 0.2.4, each finding measured on 0.2.5 before it was changed

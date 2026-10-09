@@ -9,6 +9,8 @@
 #   RG-03 the plan check looked for "Index Scan", not for the index asked about: with a twin
 #         index on the same column, measure(X) reported the twin's recall.
 #   RG-04 rows were told apart by ctid, which repeats across partitions.
+#   RG-07 rows were matched by identity, so with duplicate vectors an index that returns one
+#         copy in place of another identical one was counted as missing it.
 #   RG-08 baselines and measurements were not dumped: after a restore check() returned no
 #         rows, which reads as "all fine".
 #
@@ -149,6 +151,26 @@ truth=$(q -q -c "set ivfflat.probes = 1" -c "set enable_seqscan = off" \
 check "control: the true recall by id is below 1" "below=true" "$(q -c "select 'below=' || ($truth < 1)")"
 check "measure() over the whole table is the recall by id" "measured=$truth" \
     "$(q -c "set ivfflat.probes = 1" -c "select 'measured=' || round(recall_guard.measure('parts_ivf', 10, 1000), 2)" | tail -1)"
+
+echo "RG-07: an exact index over duplicate vectors measures 1"
+q -q -v ON_ERROR_STOP=1 >/dev/null <<'SQL'
+CREATE TABLE dups (id int, emb vector(8));
+INSERT INTO dups SELECT g, v.emb FROM generate_series(1, 2000) g
+  JOIN (SELECT i, (SELECT array_agg(random())::vector(8) FROM generate_series(1, 8) WHERE i > 0) AS emb
+          FROM generate_series(0, 49) i) v ON v.i = g % 50;
+CREATE INDEX dups_hnsw ON dups USING hnsw (emb vector_l2_ops) WITH (ef_construction = 200);
+ANALYZE dups;
+SQL
+# The control measures by distance, outside the extension: for every row, the 10 distances the
+# index returns against the 10 exact ones. Equal means the index is exact.
+check "control: by distance, the index returns the exact neighbours" "differ=0" \
+    "$(q -c "set hnsw.ef_search = 400" -c "set enable_seqscan = off" \
+         -c "create temp table vi as select id, array(select round((b.emb <-> a.emb)::numeric, 6) from dups b where b.ctid <> a.ctid order by b.emb <-> a.emb limit 10) d from dups a where id <= 200" \
+         -c "reset enable_seqscan" -c "set enable_indexscan = off" -c "set enable_bitmapscan = off" \
+         -c "create temp table ve as select id, array(select round((b.emb <-> a.emb)::numeric, 6) from dups b where b.ctid <> a.ctid order by b.emb <-> a.emb limit 10) d from dups a where id <= 200" \
+         -c "select 'differ=' || count(*) from vi join ve using (id) where vi.d is distinct from ve.d" | tail -1)"
+check "measure() of that exact index is 1" "measured=1.0000" \
+    "$(q -c "set hnsw.ef_search = 400" -c "select 'measured=' || recall_guard.measure('dups_hnsw', 10, 50)" | tail -1)"
 
 echo "RG-08: baselines and measurements survive pg_dump and restore"
 q -q -c "select recall_guard.approve('flat_hnsw', 10, 30)" >/dev/null

@@ -76,6 +76,12 @@ neighbours and discards the originating `ctid` from both sides. That is the
 difference between measuring the index and measuring that a vector equals itself:
 at `ef_search = 1` the naive version reports `0.1000`, this one reports `0.0000`.
 
+**Recall is judged by distance, ties included** (0.2.7). A returned neighbour is
+a hit if it is no farther than the k-th exact one: with duplicate vectors -- a
+chunk stored twice -- an index cannot be asked which of two identical rows to
+return. Until 0.2.6 rows were matched by identity, and an index exact by distance
+over 50 vectors stored 40 times each measured 0.3878.
+
 A row is its table and its `ctid` (0.2.6): a `ctid` alone repeats across the
 partitions of a partitioned table, which inflated the recall of a partitioned index
 (measured 0.97 against 0.95 by id). A plain table is read with `ONLY`: an
