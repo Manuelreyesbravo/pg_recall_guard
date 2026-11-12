@@ -11,6 +11,13 @@
 -- keeps the dependency it was created with, and tsm_system_rows can be dropped with
 -- DROP EXTENSION tsm_system_rows once nothing else uses it.
 --
--- No object changes.
+-- No object changes, and one grant (below).
 
 \echo Use "ALTER EXTENSION pg_recall_guard UPDATE TO '0.2.10'" to load this file. \quit
+
+-- Found in review: 0.2.8 revoked _search_settings() from PUBLIC, and measure() calls it to
+-- record the settings it measured under. So no role but the owner could measure() or check(),
+-- whatever it was granted, although baselines and measurements are row-level secured precisely
+-- so that other roles can use them. The function reads pg_settings, which every role may read.
+-- `make check-audit` (RG-S1) runs a monitoring role with the grants the README lists.
+GRANT EXECUTE ON FUNCTION recall_guard._search_settings() TO PUBLIC;

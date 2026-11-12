@@ -13,6 +13,12 @@ exactly what changed and why; that is the authoritative per-version record.
   An existing installation keeps the dependency it was created with. `META.json` no longer
   lists it, and names the maintainer in full. `make installcheck` checks that nothing else is
   pulled in; `test/pg_temp.sh` creates `tsm_system_rows` itself for the old releases it runs.
+* **A role other than the owner can measure again.** 0.2.8 revoked `_search_settings()` from
+  `PUBLIC`, and `measure()` calls it, so no other role could `measure()` or `check()`, whatever
+  it was granted, although `baselines` and `measurements` are row-level secured so that other
+  roles can use them (found in review). It is granted back; it reads `pg_settings`, which every
+  role may read. `make check-audit` RG-S1 runs a monitoring role with the grants the README now
+  lists (red on 0.2.9 with its control green).
 * README: the ef_search table is measured with `bench/ef_search.sh` (`bench/results.md`)
   instead of quoted; Tested on is restated for 0.2.10 (10 to 19); the Tests and Maturity
   sections no longer say 13 to 17 are untested or that META claims 13.

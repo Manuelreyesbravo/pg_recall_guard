@@ -253,6 +253,26 @@ check "the upgrade completes" "$(sed -n "s/^default_version *= *'\(.*\)'/\1/p" "
 check "  ...keeping one baseline, the most recent approval" "rows=1 app.t_idx|0.9500" "$($PSQL -X -d "${DB}_old" -tAc "select 'rows=' || count(*) || ' ' || string_agg(index_name || '|' || recall, ',') from recall_guard.baselines" 2>&1)"
 $PSQL -X -d postgres -qc "drop database if exists ${DB}_old" >/dev/null 2>&1 || true
 
+echo "RG-S1 (review of 0.2.9): a monitoring role with the grants the README lists can measure"
+# 0.2.8 revoked _search_settings() from PUBLIC, and measure() calls it: no role but the owner
+# could measure or check(), whatever it was granted. 0.2.10 grants it back.
+q -q -c "grant usage on schema recall_guard to $TENANT" \
+     -c "grant select on recall_guard.vector_indexes, recall_guard.baselines to $TENANT" \
+     -c "grant select, insert on recall_guard.measurements to $TENANT" \
+     -c "grant usage on sequence recall_guard.measurements_id_seq to $TENANT" \
+     -c "grant select on public.flat to $TENANT" \
+     -c "select recall_guard.approve('flat_hnsw', 10, 30)" >/dev/null
+check "control: the role reads the table itself" "rows=true" \
+    "$(qt -c "select 'rows=' || (count(*) > 0) from public.flat")"
+check "it measures the index" "measured=true" \
+    "$(qt -c "select 'measured=' || (recall_guard.measure('public.flat_hnsw', 10, 10) is not null)")"
+check "  ...and check() measures what it may read" "public.flat_hnsw|" \
+    "$(qt -c "select index_name || '|' || verdict from recall_guard.check() where index_name = 'public.flat_hnsw'" | grep -v 'COULD NOT MEASURE')"
+q -q -c "revoke select on public.flat from $TENANT" \
+     -c "revoke all on recall_guard.vector_indexes, recall_guard.baselines, recall_guard.measurements from $TENANT" \
+     -c "revoke usage on sequence recall_guard.measurements_id_seq from $TENANT" \
+     -c "revoke usage on schema recall_guard from $TENANT" >/dev/null
+
 echo "RG-08: baselines and measurements survive pg_dump and restore"
 q -q -c "select recall_guard.approve('flat_hnsw', 10, 30)" >/dev/null
 "$BIN/pg_dump" -Fc -d "$DB" -f "$DUMP"

@@ -149,6 +149,24 @@ them must be updated:
 - `check()` holds a lock on each table while it measures it, so a schema change waits
   behind it, and the queries behind that change: run it with `lock_timeout` set.
 
+## Privileges
+
+Out of the box only the owner (and superusers) can use it: the schema's tables and view
+are granted to nobody. A role that should run `check()` from your monitoring needs, besides
+`SELECT` on the tables it measures:
+
+```sql
+GRANT USAGE ON SCHEMA recall_guard TO monitor;
+GRANT SELECT ON recall_guard.vector_indexes, recall_guard.baselines TO monitor;
+GRANT SELECT, INSERT ON recall_guard.measurements TO monitor;
+GRANT USAGE ON SEQUENCE recall_guard.measurements_id_seq TO monitor;
+```
+
+It then sees and measures only the baselines of tables it may read. Approving stays with
+whom you grant `INSERT`/`UPDATE` on `baselines`. Up to 0.2.9 even these grants were not
+enough: a helper `measure()` calls was revoked from `PUBLIC` (fixed in 0.2.10;
+`make check-audit` RG-S1).
+
 ## Cost
 
 `check()` runs one exact sequential scan per sampled query, so it is not free and
