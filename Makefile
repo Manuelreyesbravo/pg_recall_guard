@@ -36,13 +36,15 @@ check-pgtemp:
 # Every suite in SUITES, in a throwaway cluster built from PG_CONFIG's binaries and
 # stopped afterwards, whatever the suites answered. PostgreSQL 18 or later: the
 # cluster loads this checkout through extension_control_path. CI runs exactly
-# this on 18 and 19.
+# this on 18 and 19. The suites go to that cluster even when PGHOST is set to
+# another server: until now they followed PGHOST and missed the cluster.
 SUITES = check-pgtemp check-recall check-audit
 .PHONY: check-suites
 check-suites:
 	@PG_CONFIG=$(PG_CONFIG) bash ./test/cluster.sh init
 	@PG_CONFIG=$(PG_CONFIG) bash ./test/cluster.sh start
 	@st=0; for s in $(SUITES); do echo "== $$s"; \
+	    PGHOST=$${RECALL_CLUSTER:-$(CURDIR)/.testcluster} PGPORT=$${PGPORT:-5496} \
 	    $(MAKE) --no-print-directory $$s PG_CONFIG=$(PG_CONFIG) || st=1; done; \
 	 PG_CONFIG=$(PG_CONFIG) bash ./test/cluster.sh stop; exit $$st
 

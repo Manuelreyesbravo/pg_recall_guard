@@ -19,6 +19,8 @@
 #
 # Connection settings come from the usual PG* environment variables.
 set -eu
+# Private scratch: fixed /tmp names collide with any other upgrade_check.sh on the host.
+TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 cd "$(dirname "$0")/.."
 EXT=$(sed -n "s/^EXTENSION *= *//p" Makefile)
 DEFAULT=$(sed -n "s/^default_version *= *'\(.*\)'/\1/p" $EXT.control)
@@ -59,7 +61,7 @@ count="SELECT count(*) FROM pg_depend d JOIN pg_extension e ON e.oid = d.refobji
 
 q -d postgres -c "DROP DATABASE IF EXISTS ci_fresh" -c "CREATE DATABASE ci_fresh"
 q -d ci_fresh -c "CREATE EXTENSION $EXT CASCADE"
-q -d ci_fresh -c "$members" > /tmp/fresh.members
+q -d ci_fresh -c "$members" > $TMP/fresh.members
 echo "$EXT $DEFAULT, fresh install: $(q -d ci_fresh -c "$count") members"
 
 failed=0
@@ -69,21 +71,21 @@ for FROM in $FROMS; do
   [ -f ci/upgrade_before.sql ] && q -d ci_upgraded -f ci/upgrade_before.sql > /dev/null
   q -d ci_upgraded -c "ALTER EXTENSION $EXT UPDATE"
   v=$(q -d ci_upgraded -c "SELECT extversion FROM pg_extension WHERE extname = '$EXT'")
-  q -d ci_upgraded -c "$members" > /tmp/upgraded.members
+  q -d ci_upgraded -c "$members" > $TMP/upgraded.members
   # Objects an upgrade is meant to leave behind (say, a table keeping data
   # from an old version for the user to migrate) are listed in
   # ci/upgrade_allow.txt, one extended regex per line, matched against the
   # start of the member line.  Documented there, not silenced here.
   allowed=0
   if [ -f ci/upgrade_allow.txt ]; then
-    grep -v -E '^(#|$)' ci/upgrade_allow.txt | sed 's/^/^/' > /tmp/allow.re
-    allowed=$(grep -c -E -f /tmp/allow.re /tmp/upgraded.members || true)
-    grep -v -E -f /tmp/allow.re /tmp/upgraded.members > /tmp/upgraded.filtered || true
-    mv /tmp/upgraded.filtered /tmp/upgraded.members
+    grep -v -E '^(#|$)' ci/upgrade_allow.txt | sed 's/^/^/' > $TMP/allow.re
+    allowed=$(grep -c -E -f $TMP/allow.re $TMP/upgraded.members || true)
+    grep -v -E -f $TMP/allow.re $TMP/upgraded.members > $TMP/upgraded.filtered || true
+    mv $TMP/upgraded.filtered $TMP/upgraded.members
   fi
   if [ "$v" != "$DEFAULT" ]; then
     echo "from $FROM: FAIL, ended at $v instead of $DEFAULT"; failed=1
-  elif ! diff -u /tmp/fresh.members /tmp/upgraded.members; then
+  elif ! diff -u $TMP/fresh.members $TMP/upgraded.members; then
     echo "from $FROM: FAIL, the upgraded extension differs from a fresh install"; failed=1
   elif [ -f ci/upgrade_after.sql ] && ! q -d ci_upgraded -f ci/upgrade_after.sql; then
     echo "from $FROM: FAIL, ci/upgrade_after.sql"; failed=1

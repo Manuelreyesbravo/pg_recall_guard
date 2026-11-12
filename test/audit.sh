@@ -33,7 +33,10 @@ export PGHOST=${PGHOST:-$ROOT/.testcluster} PGPORT=${PGPORT:-5496}
 DB=recall_guard_test_audit
 RESTORED=recall_guard_test_audit_restored
 TENANT=recall_guard_test_audit_tenant
-DUMP=$ROOT/.testcluster/audit.dump
+# The dump is the client's file: a private directory, not the throwaway cluster's, so the
+# suite also runs against a server of your own (PGHOST, PGPORT).
+DUMP_DIR=$(mktemp -d)
+DUMP=$DUMP_DIR/audit.dump
 failures=0
 
 if [ ! -f "$("$PG_CONFIG" --sharedir)/extension/vector.control" ]; then
@@ -53,7 +56,7 @@ fi
 cleanup() {
     $PSQL -X -d postgres -qc "drop database if exists $DB" -c "drop database if exists $RESTORED" \
         -c "drop role if exists $TENANT" >/dev/null 2>&1 || true
-    rm -f "$DUMP"
+    rm -f "$DUMP"; rmdir "$DUMP_DIR" 2>/dev/null || true
 }
 trap cleanup EXIT
 
