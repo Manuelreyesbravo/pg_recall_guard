@@ -4,6 +4,22 @@ Versions are released on [PGXN](https://pgxn.org/dist/pg_recall_guard/). Each
 upgrade script (`pg_recall_guard--OLD--NEW.sql`) documents, in its own header,
 exactly what changed and why; that is the authoritative per-version record.
 
+## 0.2.10 -- 2026-11-12
+
+* **`tsm_system_rows` is no longer required.** `measure()` has not used it since 0.2.8 (it
+  samples with `ORDER BY random()`, thinned with the built-in `BERNOULLI` on a large table),
+  but the control file kept requiring it, so `CREATE EXTENSION pg_recall_guard` without
+  `CASCADE` failed for a dependency the code does not use, the README quickstart among them.
+  An existing installation keeps the dependency it was created with. `META.json` no longer
+  lists it, and names the maintainer in full. `make installcheck` checks that nothing else is
+  pulled in; `test/pg_temp.sh` creates `tsm_system_rows` itself for the old releases it runs.
+* README: the ef_search table is measured with `bench/ef_search.sh` (`bench/results.md`)
+  instead of quoted; Tested on is restated for 0.2.10 (10 to 19); the Tests and Maturity
+  sections no longer say 13 to 17 are untested or that META claims 13.
+* Test harness: `ci/upgrade_check.sh` uses a private `mktemp -d`; `test/audit.sh` keeps its
+  dump outside `.testcluster`; `make check-suites` runs against its own cluster even with
+  `PGHOST` set.
+
 ## 0.2.9 -- 2026-10-09
 
 * **The verdicts `check()` returns are English.** A monitor that filters on the old words

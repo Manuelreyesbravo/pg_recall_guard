@@ -39,18 +39,22 @@ SELECT * FROM recall_guard.check();
 
 Indexes are found through `pg_amop.amoppurpose = 'o'` — access methods that can
 answer an `ORDER BY` on a distance operator. That is a PostgreSQL property, not an
-extension's. Today it covers **hnsw** and **ivfflat** (pgvector), **diskann**
-(pgvectorscale), **gist** and **spgist**; tomorrow it covers whatever ships next,
-with no change here.
+extension's, so it covers **hnsw** and **ivfflat** (pgvector), **diskann**
+(pgvectorscale), **gist** and **spgist**, and whatever ships next, with no change
+here. The tests exercise hnsw, ivfflat and gist; diskann and spgist are covered by the
+same catalog property but are not in the test suite.
 
-Verified on PostgreSQL 19beta2 against pgvector 0.8.6 and pgvectorscale 0.9.0, over
-38,352 `vector(768)` rows:
+Measured with `bench/ef_search.sh` on PostgreSQL 13.23 and pgvector 0.8.6, over a
+generated dataset of 20,000 `vector(64)` rows (uniform, fixed seed; hnsw with the
+default `m` and `ef_construction`; k = 10, 100 sampled queries, three runs each;
+details in `bench/results.md`):
 
 | `hnsw.ef_search` | measured recall |
 |---|---|
-| 1 | 0.0000 |
-| 10 | 0.9000 |
-| 40 (default) | 1.0000 |
+| 1 | 0.002 – 0.003 |
+| 10 | 0.825 – 0.847 |
+| 40 (default) | 0.910 – 0.914 |
+| 100 | 0.949 – 0.954 |
 
 ## It is built so it cannot flatter itself
 
@@ -74,7 +78,9 @@ free hit in every single query, which with `k = 10` means recall can never drop
 below `0.1` no matter how broken the index is. `pg_recall_guard` asks for `k+1`
 neighbours and discards the originating `ctid` from both sides. That is the
 difference between measuring the index and measuring that a vector equals itself:
-at `ef_search = 1` the naive version reports `0.1000`, this one reports `0.0000`.
+at `ef_search = 1` the naive version cannot report less than `0.1000`; this one
+reports what the index returns, `0.002` in the table above, and
+`test/sql/vector.sql` asserts it falls below `0.10`.
 
 **Recall is judged by distance, ties included** (0.2.7). A returned neighbour is
 a hit if it is no farther than the k-th exact one: with duplicate vectors -- a
@@ -83,10 +89,10 @@ return. Until 0.2.6 rows were matched by identity, and an index exact by distanc
 over 50 vectors stored 40 times each measured 0.3878.
 
 A row is its table and its `ctid` (0.2.6): a `ctid` alone repeats across the
-partitions of a partitioned table, which inflated the recall of a partitioned index
-(measured 0.97 against 0.95 by id). A plain table is read with `ONLY`: an
-inheritance child is not covered by the parent's index, and until 0.2.5 one diluted
-the measurement of a broken index from 0.00 to 0.97.
+partitions of a partitioned table, which inflated the recall of a partitioned index.
+A plain table is read with `ONLY`: an inheritance child is not covered by the
+parent's index, and until 0.2.5 one diluted the measurement of a broken index until
+it read as healthy. `test/audit.sh` pins both against a control.
 
 **Measuring an index runs nothing its table's owner wrote** (0.2.6). The sampled
 vector is cast to the column's base type, not to the column's type: on a domain
@@ -155,15 +161,19 @@ runs.
 
 ## Tested on
 
-Measured on 2026-09-16, not assumed: `make installcheck` was run against each
-of these releases, every one in a container of the official image for that
-version (19beta2 is a local build).
+0.2.10 was measured on 2026-11-12, not assumed, on local builds of PostgreSQL
+10.23, 11.22, 12.22, 13.23, 14.24, 15.19, 16.15, 17.11, 18.6 and 19rc1:
+`make installcheck` and `ci/upgrade_check.sh` from every earlier release (0.1.0 to
+0.2.9) on each; `make installcheck-vector` (pgvector 0.8.6) on 13 to 19, where
+pgvector was built; and `make check-suites` (`check-pgtemp`, `check-recall`,
+`check-audit`) on 18 and 19. All green. The CI in `.github/workflows` runs
+installcheck and the upgrade check on 10 to 19, and the suites on 18 and 19.
 
 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 |
 |:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
 | ✓  | ✓  | ✓  | ✓  | ✓  | ✓  | ✓  | ✓  | ✓  | ✓  |
 
-Every release still receiving updates, and three that are not.
+10 to 13 no longer receive updates from the PostgreSQL project.
 
 ## Install
 
@@ -181,13 +191,13 @@ make install    # or: make PG_CONFIG=/path/to/pg_config install
 Then, in the database you want to watch:
 
 ```sql
-CREATE EXTENSION pg_recall_guard CASCADE;
+CREATE EXTENSION pg_recall_guard;
 ```
 
-The `CASCADE` pulls in `tsm_system_rows` (PostgreSQL contrib), which `measure()`
-uses to sample query vectors. Without it, `CREATE EXTENSION` fails immediately and
-tells you so — rather than installing cleanly and failing at the first
-measurement.
+No other extension is required. Up to 0.2.9 it required `tsm_system_rows`, which
+`measure()` stopped using in 0.2.8; an installation created then keeps that
+dependency until you drop it. Measuring needs a vector index, of course: pgvector,
+pgvectorscale or anything else whose access method can order by a distance.
 
 ## Prior art, and where this differs
 
@@ -206,6 +216,8 @@ all of them.
 ```sh
 make installcheck            # no vector extension required
 make installcheck-vector     # end-to-end, requires pgvector
+make check-suites            # PostgreSQL 18+, requires pgvector: a throwaway cluster
+                             # on port 5496 (PGPORT overrides), stopped afterwards
 ```
 
 They are split on purpose. `installcheck` covers what must hold on any PostgreSQL
@@ -219,26 +231,21 @@ Assertions are ranges, not exact values, because `measure()` samples queries at
 random — a test demanding `0.9000` would fail every few runs, and a test that
 fails for reasons that are not failures gets ignored.
 
-`installcheck` is green on **PostgreSQL 18.6 and 19beta2**, with the same expected
-output on both. Earlier versions are not tested: `META.json` claims 13 as the
-minimum because nothing in the SQL is newer than 9.5 (`TABLESAMPLE`,
-`tsm_system_rows`, `ON CONFLICT`, `EXPLAIN (FORMAT JSON)`, `format()` with
-`%I`/`%L`), but that is reasoning from the source, not a passing test. If you run
-it on 13–17, a report either way is welcome.
+`installcheck` has the same expected output on every version in *Tested on*.
 
 ## Maturity
 
-**0.2.0, released as `stable`** — the test suite is what earned the label, not
-time in the field. What that means concretely: the mechanism is tested, including
-the assertion that recall *collapses* when an index is throttled, and it is green
-on two PostgreSQL versions with identical expected output.
+**Released as `stable` since 0.2.0** — the test suite is what earned the label,
+not time in the field. What that means concretely: the mechanism is tested,
+including the assertion that recall *collapses* when an index is throttled, and it
+is green on PostgreSQL 10 to 19 with identical expected output.
 
 What it does **not** mean, and is worth knowing before you rely on it:
 
-- The performance figures above come from **one machine and one dataset** (38,352
-  vectors, 768 dimensions), on `hnsw` and `diskann`. Other dimensions, `m` and
-  `ef_search` values are untested.
-- **PostgreSQL 13–17 are untested.** Green on 18.6 and 19beta2.
+- The recall figures above come from **one machine and one generated dataset**
+  (20,000 vectors, 64 dimensions, `hnsw`). Real embeddings, other dimensions, `m`
+  values and access methods will give other numbers: run `bench/ef_search.sh`, or
+  `measure()` itself, on yours.
 - **Nobody has run this against a production workload.** The 0.1.0 release was
   `testing`, which meant `pgxn install` skipped it by default and nobody could
   find it — so field reports had no way of arriving. That is the main reason this

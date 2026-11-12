@@ -11,6 +11,10 @@
 
 CREATE EXTENSION IF NOT EXISTS pg_recall_guard CASCADE;
 
+-- Nothing else comes with it (0.2.10): tsm_system_rows was required until 0.2.9, unused.
+SELECT count(*) AS other_extensions_pulled_in
+  FROM pg_extension WHERE extname = 'tsm_system_rows';
+
 -- The view exists and does not break in a database without vector indexes.
 SELECT count(*) >= 0 AS view_answers FROM recall_guard.vector_indexes;
 

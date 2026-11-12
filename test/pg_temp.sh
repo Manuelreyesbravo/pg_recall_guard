@@ -65,6 +65,8 @@ create_db() {
     $PSQL -X -d postgres -qc "create database $DB"
     $PSQL -X -d "$DB" -q -v ON_ERROR_STOP=1 >/dev/null <<SQL
 CREATE EXTENSION vector;
+-- A release up to 0.2.7 samples with tsm_system_rows, which 0.2.10 no longer requires.
+${1:+CREATE EXTENSION IF NOT EXISTS tsm_system_rows;}
 CREATE EXTENSION pg_recall_guard ${1:+VERSION '$1'} CASCADE;
 SELECT setseed(0.42);
 -- public.docs: an ivfflat index. Approved with every list probed (exact), checked

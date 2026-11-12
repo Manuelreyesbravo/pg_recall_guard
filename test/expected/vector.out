@@ -6,7 +6,6 @@
 -- that fails now and then ends up ignored, and an ignored test protects nothing.
 CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS pg_recall_guard CASCADE;
-NOTICE:  installing required extension "tsm_system_rows"
 -- A small corpus, but enough for HNSW to have to choose: 2,000 vectors of 32
 -- dimensions, deterministic (setseed) so that the index is the same on every run.
 SELECT setseed(0.42);
