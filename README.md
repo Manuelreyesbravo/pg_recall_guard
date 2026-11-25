@@ -179,13 +179,17 @@ runs.
 
 ## Tested on
 
-0.2.10 was measured on 2026-11-12, not assumed, on local builds of PostgreSQL
-10.23, 11.22, 12.22, 13.23, 14.24, 15.19, 16.15, 17.11, 18.6 and 19rc1:
-`make installcheck` and `ci/upgrade_check.sh` from every earlier release (0.1.0 to
-0.2.9) on each; `make installcheck-vector` (pgvector 0.8.6) on 13 to 19, where
-pgvector was built; and `make check-suites` (`check-pgtemp`, `check-recall`,
-`check-audit`) on 18 and 19. All green. The CI in `.github/workflows` runs
-installcheck and the upgrade check on 10 to 19, and the suites on 18 and 19.
+0.2.11 has the objects of 0.2.10, unchanged. Those were tested by the CI on
+2026-11-23
+([run 45238903932](https://github.com/Manuelreyesbravo/pg_recall_guard/actions/runs/45238903932))
+on PostgreSQL 10.23, 11.22, 12.22, 13.23, 14.25, 15.20, 16.16, 17.12, 18.7 and 19.0,
+the first release of 19: `make installcheck` and `ci/upgrade_check.sh` from every
+release on PGXN on each, and `make check-suites` (`check-pgtemp`, `check-recall`,
+`check-audit`, with pgvector) on 18 and 19. All green. The CI in
+`.github/workflows` runs the same on every push and every Monday.
+
+Before that, 0.2.10 was measured on 2026-11-12 on local builds of PostgreSQL 10.23
+to 18.6 and 19rc1, including `make installcheck-vector` (pgvector 0.8.6) on 13 to 19.
 
 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 |
 |:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|

@@ -1,6 +1,6 @@
 # pg_recall_guard extension
 comment = 'Watch vector indexes for recall drift against an approved baseline'
-default_version = '0.2.10'
+default_version = '0.2.11'
 relocatable = false
 # No requires: measure() sampled with tsm_system_rows until 0.2.7 and has not
 # used it since 0.2.8 (0.2.10 dropped the requirement).

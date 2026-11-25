@@ -4,6 +4,12 @@ Versions are released on [PGXN](https://pgxn.org/dist/pg_recall_guard/). Each
 upgrade script (`pg_recall_guard--OLD--NEW.sql`) documents, in its own header,
 exactly what changed and why; that is the authoritative per-version record.
 
+## 0.2.11 -- 2026-11-25
+
+Documentation only; no object changes (`ALTER EXTENSION pg_recall_guard UPDATE` moves the
+version and nothing else). Tested on is restated for PostgreSQL 19.0 (released 2026-11-19) and
+the current minor releases of 10 to 18, from the CI run of 2026-11-23.
+
 ## 0.2.10 -- 2026-11-12
 
 * **`tsm_system_rows` is no longer required.** `measure()` has not used it since 0.2.8 (it
